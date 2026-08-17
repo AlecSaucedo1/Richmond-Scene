@@ -6,6 +6,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -19,7 +20,7 @@ from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
 REFRESH_INTERVAL_HOURS = max(1.0, float(os.getenv("REFRESH_INTERVAL_HOURS", "6")))
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 
 store = SnapshotStore()
 client = DataSFClient()
@@ -94,6 +95,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="The San Francisco Bulletin", version=APP_VERSION, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 templates = Jinja2Templates(directory=ROOT / "templates")
+templates.env.filters["quote_plus"] = quote_plus
 
 
 @app.get("/api/health")
