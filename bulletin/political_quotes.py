@@ -6,7 +6,7 @@ QUOTES: list[dict[str, Any]] = [
     {
         "person": "Daniel Lurie",
         "title": "Mayor of San Francisco",
-        "date": "2025-06-04",
+        "date": "May–June 2025 budget remarks",
         "beat": "police",
         "claim": "city_crime_down",
         "quote": "We’ve been working hard—crime is down roughly 30%—but when it comes to the safety of San Franciscans, we take nothing for granted.",
@@ -16,7 +16,7 @@ QUOTES: list[dict[str, Any]] = [
     {
         "person": "Daniel Lurie",
         "title": "Mayor of San Francisco",
-        "date": "2025-02-13",
+        "date": "February 13, 2025",
         "beat": "recovery",
         "claim": "business_housing_recovery",
         "quote": "San Francisco is coming back, but we need to create clearer pathways to open businesses and build housing.",
@@ -26,7 +26,7 @@ QUOTES: list[dict[str, Any]] = [
     {
         "person": "Danny Sauter",
         "title": "District 3 Supervisor",
-        "date": "2026-01-06",
+        "date": "January 2026",
         "beat": "police",
         "claim": "d3_crime_down",
         "quote": "Crime citywide is down nearly 30%, and nearly 40% within the Central Police District.",
@@ -36,7 +36,7 @@ QUOTES: list[dict[str, Any]] = [
     {
         "person": "Shamann Walton",
         "title": "District 10 Supervisor",
-        "date": "2026-03-10",
+        "date": "March 10, 2026",
         "beat": "service_requests",
         "claim": "bayview_cleanliness",
         "quote": "Bayview deserves the same clean, healthy environment as any other neighborhood in San Francisco.",
@@ -46,7 +46,7 @@ QUOTES: list[dict[str, Any]] = [
     {
         "person": "Connie Chan",
         "title": "District 1 Supervisor / Budget Chair",
-        "date": "2026-02-01",
+        "date": "FY 2026–27 budget cycle",
         "beat": "budget",
         "claim": "budget_trajectory",
         "quote": "Controller reports project that the city’s budget trajectory is finally trending in a better direction.",
@@ -56,7 +56,7 @@ QUOTES: list[dict[str, Any]] = [
     {
         "person": "Scott Wiener",
         "title": "California State Senator",
-        "date": "2025-08-05",
+        "date": "2025",
         "beat": "traffic",
         "claim": "speed_cameras",
         "quote": "Automated speed enforcement works to make our streets safer.",
@@ -149,7 +149,7 @@ def evaluate_quote(snapshot: dict, item: dict) -> dict:
         metrics = [{"label": "Bayview Hunters Point 311 requests", "value": _fmt_pct(bay["pct"])}]
         verdict, tone = "Data highlights the issue; claim is normative", "mixed"
         analysis = f"Bayview Hunters Point’s latest overall 311 volume is {_fmt_pct(bay['pct'])}. That can show service pressure, but the quote is fundamentally a value statement about equal neighborhood conditions."
-        wrinkle = "Illegal dumping is especially tricky: 311 counts reflect both dumping and reporting behavior, and the city has acknowledged that the category can understate the true problem."
+        wrinkle = "Illegal dumping is especially tricky: 311 counts reflect both dumping and reporting behavior, and public analysis has warned that 311 can understate the true problem."
 
     elif claim == "budget_trajectory":
         verdict, tone = "Not testable with current Bulletin feeds", "neutral"
