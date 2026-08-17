@@ -1,0 +1,42 @@
+{% macro story_context(story, neighborhood, compact=false) -%}
+  {% set base_q = story.headline ~ ' ' ~ neighborhood ~ ' San Francisco' %}
+  {% if story.source == 'police' %}
+    {% set news_q = story.headline ~ ' ' ~ neighborhood ~ ' San Francisco SFPD police' %}
+  {% elif story.source == 'permits' %}
+    {% set news_q = story.headline ~ ' ' ~ neighborhood ~ ' San Francisco development housing permit' %}
+  {% elif story.source == 'businesses' %}
+    {% set news_q = story.headline ~ ' ' ~ neighborhood ~ ' San Francisco business opening' %}
+  {% else %}
+    {% set news_q = story.headline ~ ' ' ~ neighborhood ~ ' San Francisco 311' %}
+  {% endif %}
+  <div class="web-context{% if compact %} compact{% endif %}" aria-label="Search the web for context">
+    <span class="web-context-label">Web context</span>
+    <a href="https://www.google.com/search?q={{ base_q|quote_plus }}" target="_blank" rel="noopener noreferrer">Google <span aria-hidden="true">↗</span></a>
+    <a class="news-search" href="https://www.google.com/search?tbm=nws&q={{ news_q|quote_plus }}" target="_blank" rel="noopener noreferrer">{% if story.source == 'police' %}Find coverage{% else %}News{% endif %} <span aria-hidden="true">↗</span></a>
+    {% if story.source in ['businesses', 'permits'] %}
+    <a href="https://www.google.com/maps/search/?api=1&query={{ base_q|quote_plus }}" target="_blank" rel="noopener noreferrer">Maps <span aria-hidden="true">↗</span></a>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro record_context(item, neighborhood, kind) -%}
+  {% if kind == 'business' %}
+    {% set search_q = item.title ~ ' ' ~ (item.address or '') ~ ' ' ~ neighborhood ~ ' San Francisco' %}
+    {% set news_q = item.title ~ ' ' ~ neighborhood ~ ' San Francisco business opening' %}
+    {% set map_q = item.title ~ ' ' ~ (item.address or '') ~ ' San Francisco' %}
+  {% elif kind == 'permit' %}
+    {% set search_q = (item.address or item.title) ~ ' ' ~ item.title ~ ' San Francisco development permit' %}
+    {% set news_q = (item.address or item.title) ~ ' San Francisco development housing' %}
+    {% set map_q = (item.address or item.title) ~ ' San Francisco' %}
+  {% else %}
+    {% set search_q = item.title ~ ' ' ~ (item.address or item.category or '') ~ ' ' ~ neighborhood ~ ' San Francisco 311' %}
+    {% set news_q = item.title ~ ' ' ~ neighborhood ~ ' San Francisco' %}
+    {% set map_q = (item.address or neighborhood) ~ ' San Francisco' %}
+  {% endif %}
+  <div class="web-context compact record-web-context" aria-label="Search the web for this record">
+    <span class="web-context-label">Look it up</span>
+    <a href="https://www.google.com/search?q={{ search_q|quote_plus }}" target="_blank" rel="noopener noreferrer">Google <span aria-hidden="true">↗</span></a>
+    {% if kind in ['business', 'permit'] %}<a href="https://www.google.com/search?tbm=nws&q={{ news_q|quote_plus }}" target="_blank" rel="noopener noreferrer">News <span aria-hidden="true">↗</span></a>{% endif %}
+    <a href="https://www.google.com/maps/search/?api=1&query={{ map_q|quote_plus }}" target="_blank" rel="noopener noreferrer">Maps <span aria-hidden="true">↗</span></a>
+  </div>
+{%- endmacro %}
