@@ -19,7 +19,7 @@ from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
 REFRESH_INTERVAL_HOURS = max(1.0, float(os.getenv("REFRESH_INTERVAL_HOURS", "6")))
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 
 store = SnapshotStore()
 client = DataSFClient()
