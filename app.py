@@ -16,22 +16,26 @@ from fastapi.templating import Jinja2Templates
 from bulletin.analysis import build_snapshot
 from bulletin.config import SOURCES
 from bulletin.datasf import DataSFClient
+from bulletin.editorial import enrich_snapshot
+from bulletin.news import NewsContextClient
 from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
 REFRESH_INTERVAL_HOURS = max(1.0, float(os.getenv("REFRESH_INTERVAL_HOURS", "6")))
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 
 store = SnapshotStore()
 client = DataSFClient()
+news_client = NewsContextClient()
 _snapshot = store.load()
 _snapshot_lock = asyncio.Lock()
 _last_error: str | None = None
 _source_errors: dict[str, str] = {}
+_news_error: str | None = None
 
 
 async def refresh_snapshot() -> dict:
-    global _snapshot, _last_error, _source_errors
+    global _snapshot, _last_error, _source_errors, _news_error
     async with _snapshot_lock:
         results = await asyncio.gather(
             *(client.fetch_source(source, date.today()) for source in SOURCES),
@@ -54,10 +58,21 @@ async def refresh_snapshot() -> dict:
                 return _snapshot
             raise RuntimeError(_last_error)
 
+        generated_at = datetime.now(timezone.utc)
+        news_items: list[dict] = []
         try:
-            fresh = build_snapshot(successful, datetime.now(timezone.utc))
+            news_items = await news_client.fetch_recent()
+            _news_error = None
+        except Exception as exc:
+            _news_error = f"{type(exc).__name__}: {exc}"
+            print(f"Recent-news context refresh failed: {_news_error}", flush=True)
+
+        try:
+            fresh = build_snapshot(successful, generated_at)
+            enrich_snapshot(fresh, news_items, generated_at)
             fresh["source_errors"] = source_errors
             fresh["available_sources"] = [item["key"] for item in successful]
+            fresh["news_error"] = _news_error
             store.save(fresh)
             _snapshot = fresh
             _last_error = None if not source_errors else "One or more DataSF sources are temporarily unavailable"
@@ -108,6 +123,7 @@ async def health() -> JSONResponse:
             "generated_at": (_snapshot or {}).get("generated_at"),
             "degraded": bool(_source_errors),
             "source_errors": _source_errors,
+            "news_error": _news_error,
             "last_error": _last_error,
         }
     )
@@ -122,6 +138,7 @@ async def manual_refresh() -> JSONResponse:
             "generated_at": fresh.get("generated_at"),
             "degraded": bool(_source_errors),
             "source_errors": _source_errors,
+            "news_error": _news_error,
         }
     )
 
@@ -142,6 +159,22 @@ async def home(request: Request):
         request=request,
         name="home.html",
         context={"snapshot": _snapshot, "version": APP_VERSION},
+    )
+
+
+@app.get("/city", response_class=HTMLResponse)
+async def city(request: Request):
+    if not _snapshot:
+        return templates.TemplateResponse(
+            request=request,
+            name="building.html",
+            context={"version": APP_VERSION},
+            status_code=202,
+        )
+    return templates.TemplateResponse(
+        request=request,
+        name="city.html",
+        context={"snapshot": _snapshot, "city": _snapshot.get("city_analysis", {}), "version": APP_VERSION},
     )
 
 
