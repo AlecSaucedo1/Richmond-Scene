@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "search_links.html" as web %}
 {% block title %}The San Francisco Bulletin — Neighborhood Data News{% endblock %}
 {% block content %}
 {% if not snapshot %}
@@ -13,6 +14,7 @@
     <h1><a href="/neighborhood/{{ lead.slug }}#story-{{ lead.source }}">{{ lead.headline }}</a></h1>
     <p class="lead-dek">{{ lead.dek }}</p>
     {% if lead.facts %}<ul class="fact-list compact">{% for fact in lead.facts[:2] %}<li>{{ fact }}</li>{% endfor %}</ul>{% endif %}
+    {{ web.story_context(lead, lead.name) }}
     <div class="story-actions">
       <a class="action-link primary" href="/neighborhood/{{ lead.slug }}#story-{{ lead.source }}">Read story <span aria-hidden="true">→</span></a>
       <button type="button" class="action-link js-share" data-share-title="{{ lead.headline }}" data-share-url="/neighborhood/{{ lead.slug }}#story-{{ lead.source }}">Share</button>
@@ -25,6 +27,7 @@
       <a class="brief-neighborhood" href="/neighborhood/{{ story.slug }}">{{ story.name }} · {{ story.section }}</a>
       <h2><a href="/neighborhood/{{ story.slug }}#story-{{ story.source }}">{{ story.headline }}</a></h2>
       <p>{{ story.dek }}</p>
+      {{ web.story_context(story, story.name, true) }}
       <span class="post-cue">Open story <span aria-hidden="true">→</span></span>
     </article>
     {% endfor %}
@@ -41,6 +44,7 @@
     {% if story.facts %}
     <details class="inline-details"><summary>Key facts</summary><ul class="story-facts">{% for fact in story.facts[:3] %}<li>{{ fact }}</li>{% endfor %}</ul></details>
     {% endif %}
+    {{ web.story_context(story, story.name, true) }}
     <span class="post-cue">Read {{ story.name }} <span aria-hidden="true">→</span></span>
   </article>
   {% endfor %}
@@ -69,6 +73,7 @@
     <a class="eyebrow" href="/neighborhood/{{ n.slug }}">{{ n.name }} · {{ e.lead.section }}</a>
     <h3><a href="/neighborhood/{{ n.slug }}#story-{{ e.lead.source }}">{{ e.lead.headline }}</a></h3>
     <p>{{ e.lead.dek }}</p>
+    {{ web.story_context(e.lead, n.name, true) }}
     <div class="mini-ledger">
       {% for key in ['businesses','permits','service_requests','police'] %}
         {% if e.metrics.get(key) %}<span><strong>{{ e.metrics[key].current }}</strong> {{ e.metrics[key].short_label }}</span>{% endif %}
