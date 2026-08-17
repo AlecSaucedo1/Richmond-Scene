@@ -1,183 +1,248 @@
 from __future__ import annotations
 
-import math
-import re
-from collections import defaultdict
+import math, re
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from statistics import median
 from typing import Any
 
 from .config import ANALYSIS_NEIGHBORHOODS, SOURCES, SourceConfig
 
+FRIENDLY_311 = {
+    "Graffiti Public Property": "graffiti on public property",
+    "Graffiti Private Property": "graffiti on private property",
+    "Street and Sidewalk Cleaning": "street and sidewalk cleaning",
+    "Encampments": "encampment-related requests",
+    "Abandoned Vehicle": "abandoned-vehicle reports",
+    "Blocked Street or SideWalk": "blocked street or sidewalk reports",
+    "Noise Report": "noise complaints",
+    "General Request - PUBLIC WORKS": "Public Works requests",
+    "MUNI Feedback": "Muni feedback",
+    "Tree Maintenance": "tree-maintenance requests",
+    "Streetlights": "streetlight requests",
+}
+ROUTINE_311 = {"graffiti public property", "graffiti private property", "street and sidewalk cleaning", "general request - public works"}
 
-def slugify(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", value.lower().replace("/", "-")).strip("-")
+
+def slugify(v: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", v.lower().replace("/", "-")).strip("-")
 
 
-def parse_day(value: str) -> date:
-    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+def num(v: Any) -> float:
+    try: return float(v or 0)
+    except (TypeError, ValueError): return 0.0
 
 
-def num(value: Any) -> float:
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
+def day(v: Any) -> date:
+    return datetime.fromisoformat(str(v).replace("Z", "+00:00")).date()
 
 
-def metric_stats(rows: list[dict[str, Any]], end_day: date) -> dict[str, Any]:
-    current_start = end_day - timedelta(days=6)
-    baseline_start = current_start - timedelta(days=28)
+def text(v: Any, n: int = 220) -> str:
+    s = " ".join(str(v or "").replace("\n", " ").split()).strip()
+    return s if len(s) <= n else s[: n - 1].rstrip(" ,;:-") + "…"
+
+
+def label(v: Any, source: str = "") -> str:
+    raw = text(v, 100) or "Other"
+    return FRIENDLY_311.get(raw, raw) if source == "service_requests" else raw
+
+
+def money(v: float) -> str:
+    return f"${v/1_000_000:.1f}M" if v >= 1_000_000 else (f"${v/1_000:.0f}K" if v >= 1_000 else f"${v:,.0f}")
+
+
+def metric_stats(rows: list[dict[str, Any]], end: date) -> dict[str, Any]:
+    start, base_start = end - timedelta(days=6), end - timedelta(days=34)
     current = baseline = 0
-    by_day: dict[date, int] = defaultdict(int)
-    for row in rows:
-        day = parse_day(row["day"])
-        count = int(num(row.get("count")))
-        by_day[day] += count
-        if current_start <= day <= end_day:
-            current += count
-        elif baseline_start <= day < current_start:
-            baseline += count
-    baseline_week = baseline / 4 if baseline else 0
-    delta = current - baseline_week
-    pct = delta / baseline_week * 100 if baseline_week >= 1 else None
+    daily: dict[date, int] = defaultdict(int)
+    for r in rows:
+        d, c = day(r["day"]), int(num(r.get("count")))
+        daily[d] += c
+        if start <= d <= end: current += c
+        elif base_start <= d < start: baseline += c
+    base_week = baseline / 4 if baseline else 0
+    delta = current - base_week
+    pct = delta / base_week * 100 if base_week >= 1 else None
     weekly = []
-    for i in range(8):
-        w_end = end_day - timedelta(days=7 * i)
-        w_start = w_end - timedelta(days=6)
-        weekly.append(sum(v for d, v in by_day.items() if w_start <= d <= w_end))
-    weekly.reverse()
-    surprise = abs(delta) / math.sqrt(baseline_week + 1)
+    for i in range(7, -1, -1):
+        w_end = end - timedelta(days=7 * i)
+        weekly.append(sum(v for d, v in daily.items() if w_end - timedelta(days=6) <= d <= w_end))
+    mx = max(weekly) if weekly else 0
+    surprise = abs(delta) / math.sqrt(base_week + 1)
     interest = min(100, surprise * 10 + math.log1p(current) * 7 + min(abs(pct or 0), 150) * .28)
-    return {
-        "current": current,
-        "baseline_week": round(baseline_week, 1),
-        "pct_change": round(pct, 1) if pct is not None else None,
-        "interest": round(interest, 1),
-        "weekly_history": weekly,
-    }
+    return {"current": current, "baseline_week": round(base_week, 1), "pct_change": round(pct, 1) if pct is not None else None,
+            "interest": round(interest, 1), "weekly_history": weekly,
+            "history_bars": [round(v / mx * 100) if mx else 0 for v in weekly]}
 
 
-def category_stats(rows: list[dict[str, Any]], end_day: date) -> list[dict[str, Any]]:
-    current_start = end_day - timedelta(days=6)
-    baseline_start = current_start - timedelta(days=28)
+def category_stats(rows: list[dict[str, Any]], end: date, source: str) -> list[dict[str, Any]]:
+    start, base_start = end - timedelta(days=6), end - timedelta(days=34)
     totals = defaultdict(lambda: [0.0, 0.0])
-    for row in rows:
-        category = str(row.get("category") or "Uncategorized").strip()
-        day = parse_day(row["day"])
-        count = num(row.get("count"))
-        if current_start <= day <= end_day:
-            totals[category][0] += count
-        elif baseline_start <= day < current_start:
-            totals[category][1] += count
-    output = []
-    for category, (current, baseline) in totals.items():
-        baseline_week = baseline / 4
-        pct = (current - baseline_week) / baseline_week * 100 if baseline_week >= 1 else None
-        score = abs(current - baseline_week) / math.sqrt(baseline_week + 1) * 8 + math.log1p(current) * 5
-        output.append({"category": category, "current": int(current), "pct_change": round(pct, 1) if pct is not None else None, "interest": round(score, 1)})
-    return sorted(output, key=lambda x: (x["interest"], x["current"]), reverse=True)
+    for r in rows:
+        d, c = day(r["day"]), num(r.get("count")); key = str(r.get("category") or "Uncategorized").strip()
+        if start <= d <= end: totals[key][0] += c
+        elif base_start <= d < start: totals[key][1] += c
+    out = []
+    for key, (cur, base) in totals.items():
+        bw = base / 4
+        pct = (cur - bw) / bw * 100 if bw >= 1 else None
+        score = abs(cur - bw) / math.sqrt(bw + 1) * 8 + math.log1p(cur) * 5
+        out.append({"category": key, "display_category": label(key, source), "current": int(cur), "baseline_week": round(bw, 1),
+                    "pct_change": round(pct, 1) if pct is not None else None, "interest": round(score, 1)})
+    return sorted(out, key=lambda x: (x["interest"], x["current"]), reverse=True)
 
 
-def change_phrase(stats: dict[str, Any]) -> str:
-    pct = stats.get("pct_change")
-    if pct is None:
-        return "above its recent average" if stats["current"] > stats["baseline_week"] else "near its recent average"
-    if abs(pct) < 8:
-        return "roughly in line with the prior four-week average"
+def change(s: dict[str, Any]) -> str:
+    pct = s.get("pct_change")
+    if pct is None: return "above its recent average" if s["current"] > s["baseline_week"] else "near its recent average"
+    if abs(pct) < 8: return "roughly in line with the prior four-week average"
     return f"{abs(pct):.0f}% {'above' if pct > 0 else 'below'} the prior four-week average"
 
 
-def headline(config: SourceConfig, neighborhood: str, stats: dict[str, Any], categories: list[dict[str, Any]]) -> tuple[str, str]:
-    count = stats["current"]
-    pct = stats.get("pct_change") or 0
-    top = categories[0] if categories else None
-    if config.key == "businesses":
-        title = f"New business registrations pick up in {neighborhood}" if pct >= 25 else f"{count} new business locations registered this week"
-        dek = f"New location registrations are {change_phrase(stats)}."
-    elif config.key == "permits":
-        title = f"{top['category']} filings lead this week's permit activity" if top and top["current"] >= 2 else f"{count} building permits filed across {neighborhood}"
-        dek = f"Permit filings are {change_phrase(stats)}."
-    elif config.key == "service_requests":
-        title = f"{top['category']} leads this week's 311 activity" if top and top["current"] >= 4 else "311 activity shapes this week's civic-service picture"
-        dek = f"Residents logged {count} service requests, {change_phrase(stats)}."
-    else:
-        title = "Reported police incidents ease from recent levels" if pct <= -15 else ("Reported police incidents run above the recent average" if pct >= 15 else "Reported police incidents remain near recent levels")
-        dek = f"The public incident dataset shows {count} reports in the latest seven-day period, {change_phrase(stats)}."
-    return title, dek
+def trend(pct: float | None) -> str:
+    return "held steady" if pct is None or abs(pct) < 8 else ("rose" if pct > 0 else "fell")
 
 
-def notable_records(config: SourceConfig, rows: list[dict[str, Any]], neighborhood: str) -> list[dict[str, Any]]:
-    matching = [r.copy() for r in rows if str(r.get(config.neighborhood_field) or "").strip() == neighborhood]
-    if config.key == "permits":
-        matching.sort(key=lambda r: num(r.get("estimated_cost")), reverse=True)
-        return [{
-            "title": r.get("permit_type_definition") or "Building permit",
-            "address": " ".join(str(r.get(k) or "").strip() for k in ("street_number", "street_name", "street_suffix")).strip(),
-            "description": str(r.get("description") or "").strip(),
-            "cost": num(r.get("estimated_cost")),
-        } for r in matching[:5]]
-    if config.key == "businesses":
-        seen, out = set(), []
-        for r in matching:
-            item = (str(r.get("dba_name") or "New business").strip(), str(r.get("full_business_address") or "").strip())
-            if item in seen:
-                continue
-            seen.add(item)
-            out.append({"title": item[0], "address": item[1]})
-            if len(out) == 6:
-                break
+def top_category(items: list[dict[str, Any]], source: str) -> dict[str, Any] | None:
+    items = [x for x in items if x.get("current", 0) > 0] or items
+    if not items: return None
+    if source != "service_requests": return items[0]
+    scored = []
+    for x in items:
+        score = x["interest"]
+        if str(x["category"]).lower() in ROUTINE_311:
+            score *= .48
+            if x.get("pct_change") is not None and abs(x["pct_change"]) >= 60: score *= 1.6
+        scored.append((score, x))
+    return max(scored, key=lambda p: (p[0], p[1]["current"]))[1]
+
+
+def records(cfg: SourceConfig, rows: list[dict[str, Any]], hood: str) -> list[dict[str, Any]]:
+    rows = [r for r in rows if str(r.get(cfg.neighborhood_field) or "").strip() == hood]
+    if cfg.key == "permits":
+        rows.sort(key=lambda r: num(r.get("estimated_cost")), reverse=True)
+        return [{"title": text(r.get("permit_type_definition") or "Building permit", 100),
+                 "address": " ".join(str(r.get(k) or "").strip() for k in ("street_number", "street_name", "street_suffix")).strip(),
+                 "description": text(r.get("description"), 240), "cost": num(r.get("estimated_cost")),
+                 "status": text(r.get("status"), 60), "permit_number": text(r.get("permit_number"), 40)} for r in rows[:8]]
+    if cfg.key == "businesses":
+        out, seen = [], set()
+        for r in rows:
+            pair = (text(r.get("dba_name") or "New business", 100), text(r.get("full_business_address"), 120))
+            if pair in seen: continue
+            seen.add(pair); out.append({"title": pair[0], "address": pair[1], "owner": text(r.get("ownership_name"), 100)})
+            if len(out) == 8: break
         return out
+    if cfg.key == "service_requests":
+        out, seen = [], set()
+        for r in rows:
+            cat, sub, addr = label(r.get("service_name"), cfg.key), text(r.get("service_subtype"), 100), text(r.get("address"), 120)
+            title = sub if sub and sub.lower() != str(r.get("service_name") or "").lower() else cat
+            if (title, addr) in seen: continue
+            seen.add((title, addr)); detail = text(r.get("service_details"), 150)
+            out.append({"title": title, "category": cat, "address": addr,
+                        "description": detail if detail.lower() not in {title.lower(), cat.lower()} else "",
+                        "status": text(r.get("status_description"), 40)})
+            if len(out) == 8: break
+        return out
+    if cfg.key == "police":
+        c = Counter((text(r.get("incident_category"), 100), text(r.get("incident_subcategory") or r.get("incident_description"), 120)) for r in rows)
+        return [{"title": sub or cat, "category": cat, "count": count} for (cat, sub), count in c.most_common(8) if cat or sub]
     return []
 
 
+def story(cfg: SourceConfig, hood: str, s: dict[str, Any], cats: list[dict[str, Any]], recs: list[dict[str, Any]]) -> dict[str, Any]:
+    n, pct, top = s["current"], s.get("pct_change"), top_category(cats, cfg.key)
+    score, facts, topic = s["interest"] * cfg.editorial_weight, [], cfg.key
+    if cfg.key == "businesses":
+        first = recs[0] if recs else None
+        title = (f"{first['title']} registers a new {hood} location" if n == 1 else f"{first['title']} is among {n} new business locations registered") if first else f"{n} new business locations registered in {hood}"
+        detail = f"The filing lists {first['address']}." if first and first.get("address") else "The latest business-location records show new registrations across the neighborhood."
+        dek = f"Registrations are {change(s)}. {detail}"; facts = [f"{n} new location registration{'s' if n != 1 else ''} in the latest source window."]
+        if len(recs) > 1: facts.append("Also newly registered: " + "; ".join(x["title"] for x in recs[1:3]) + ".")
+        topic = "business-registrations"; score += min(14, n * 1.8)
+    elif cfg.key == "permits":
+        first = recs[0] if recs else None
+        if first and first.get("cost", 0) >= 250_000 and first.get("address"):
+            title = f"{money(first['cost'])} permit filing stands out at {first['address']}"; detail = first.get("description") or "The filing is one of the week's larger development records."
+        elif first and first.get("address"):
+            title = f"{first['title']} filed at {first['address']}"; detail = first.get("description") or f"It is one of {n} permit filings in the latest window."
+        elif top:
+            title = f"{top['display_category']} leads {hood}'s latest permit filings"; detail = f"The category accounts for {top['current']} of {n} filings."
+        else: title, detail = f"{n} building permits filed across {hood}", "The filings span the latest seven-day permit window."
+        dek = f"Permit activity is {change(s)}. {text(detail, 250)}"; facts = [f"{n} permit filing{'s' if n != 1 else ''} in the latest window."]
+        if first and first.get("cost"): facts.append(f"Largest listed estimated cost: {money(first['cost'])}.")
+        if top: facts.append(f"Most active permit type: {top['display_category']} ({top['current']}).")
+        topic = "development"
+        if first and first.get("cost", 0) >= 1_000_000: score += min(32, math.log10(first["cost"]) * 4.5)
+    elif cfg.key == "service_requests":
+        if top:
+            name, tpct = top["display_category"], top.get("pct_change"); topic = "311-" + slugify(name)
+            title = f"{name.capitalize()} {trend(tpct)} in {hood}'s latest 311 data" if tpct is not None and abs(tpct) >= 20 and top["current"] >= 3 else f"311 volume {trend(pct)} as {name} led service requests"
+            detail = f"{name.capitalize()} accounted for {top['current']} of {n} requests, versus a prior four-week weekly average of {top['baseline_week']:.1f}."
+        else: title, detail = f"{n} 311 requests logged across {hood}", "The public service-request feed was broadly distributed across categories."
+        dek = f"Overall 311 activity is {change(s)}. {detail}"; facts = [f"{x['display_category'].capitalize()}: {x['current']} requests." for x in cats[:3]]
+        if top and str(top["category"]).lower() in ROUTINE_311: score *= .62
+        if pct is None or abs(pct) < 15: score *= .82
+    else:
+        if top and top["current"] >= 2:
+            name, tpct = top["display_category"], top.get("pct_change"); topic = "police-" + slugify(name)
+            title = f"{name} reports {trend(tpct)} in the latest police data" if tpct is not None and abs(tpct) >= 18 else f"{name} is the largest category in the latest police report data"
+            detail = f"The category accounts for {top['current']} of {n} reported incidents in the seven-day source window."
+        else: title, detail = f"Reported police incidents {trend(pct)} from the recent average", f"The dataset contains {n} reports in the latest seven-day period."
+        dek = f"Overall incident-report volume is {change(s)}. {detail}"; facts = [f"{x['display_category']}: {x['current']} reports." for x in cats[:3]]; score *= .92
+    if n == 0: score = -20
+    return {"source": cfg.key, "current": n, "section": cfg.section, "headline": text(title, 150), "dek": text(dek, 380),
+            "facts": facts[:3], "interest": round(score, 1), "source_url": cfg.source_url, "topic_key": topic}
+
+
+def quick_read(e: dict[str, Any]) -> list[dict[str, str]]:
+    out, note, m = [], e.get("notable", {}), e.get("metrics", {})
+    if note.get("businesses"):
+        x = note["businesses"][0]; out.append({"label": "Business", "text": x["title"] + (f" — {x['address']}" if x.get("address") else "")})
+    if note.get("permits"):
+        x = note["permits"][0]; t = x.get("address") or x.get("title") or "Permit filing"; out.append({"label": "Development", "text": f"{money(x['cost'])} filing at {t}" if x.get("cost") else t})
+    x = top_category(m.get("service_requests", {}).get("categories") or [], "service_requests")
+    if x: out.append({"label": "City services", "text": f"{x['display_category'].capitalize()}: {x['current']} requests"})
+    cats = m.get("police", {}).get("categories") or []
+    if cats and cats[0].get("current", 0) > 0: out.append({"label": "Public safety", "text": f"{cats[0]['display_category']}: {cats[0]['current']} reports"})
+    return out[:4]
+
+
+def front_page(editions: dict[str, dict[str, Any]], limit: int = 12) -> list[dict[str, Any]]:
+    candidates = sorted(({"name": e["name"], "slug": e["slug"], **s} for e in editions.values() for s in e.get("stories", [])), key=lambda x: x["interest"], reverse=True)
+    chosen, hoods, sources, topics = [], set(), Counter(), Counter(); caps = {"permits": 4, "businesses": 4, "service_requests": 2, "police": 2}
+    for x in candidates:
+        if x["current"] <= 0 or x["slug"] in hoods or sources[x["source"]] >= caps.get(x["source"], 3) or topics[x["topic_key"]] >= 2: continue
+        chosen.append(x); hoods.add(x["slug"]); sources[x["source"]] += 1; topics[x["topic_key"]] += 1
+        if len(chosen) == limit: return chosen
+    for x in candidates:
+        if len(chosen) == limit: break
+        if x["current"] > 0 and x["slug"] not in hoods: chosen.append(x); hoods.add(x["slug"])
+    return chosen
+
+
 def build_snapshot(raw_sources: list[dict[str, Any]], generated_at: datetime) -> dict[str, Any]:
-    raw_by_key = {r["key"]: r for r in raw_sources}
-    observed = {str(row.get("neighborhood") or "").strip() for src in raw_sources for row in src.get("daily", []) if row.get("neighborhood")}
-    neighborhoods = list(ANALYSIS_NEIGHBORHOODS) + sorted(observed - set(ANALYSIS_NEIGHBORHOODS))
-    editions, source_recency, city_values = {}, {}, defaultdict(list)
-
-    for neighborhood in neighborhoods:
-        metrics, stories, notable = {}, [], {}
-        for config in SOURCES:
-            raw = raw_by_key.get(config.key)
-            if not raw:
-                continue
-            end_day = date.fromisoformat(raw["latest"])
-            source_recency[config.key] = raw["latest"]
-            daily = [r for r in raw.get("daily", []) if str(r.get("neighborhood") or "").strip() == neighborhood]
-            cats = [r for r in raw.get("categories", []) if str(r.get("neighborhood") or "").strip() == neighborhood]
-            stats = metric_stats(daily, end_day)
-            categories = category_stats(cats, end_day)
-            metrics[config.key] = {**stats, "short_label": config.short_label, "section": config.section, "categories": categories[:8], "source_url": config.source_url}
-            city_values[config.key].append(stats["current"])
-            title, dek = headline(config, neighborhood, stats, categories)
-            stories.append({"source": config.key, "section": config.section, "headline": title, "dek": dek, "interest": stats["interest"], "source_url": config.source_url})
-            notable[config.key] = notable_records(config, raw.get("recent", []), neighborhood)
-        top_permit = (notable.get("permits") or [None])[0]
-        if top_permit and top_permit.get("cost", 0) >= 1_000_000:
-            for story in stories:
-                if story["source"] == "permits":
-                    cost = top_permit["cost"]
-                    story["interest"] += min(30, math.log10(cost) * 4)
-                    story["headline"] = f"${cost / 1_000_000:.1f}M permit filing leads this week's development activity"
-        stories.sort(key=lambda x: x["interest"], reverse=True)
-        editions[slugify(neighborhood)] = {"name": neighborhood, "slug": slugify(neighborhood), "metrics": metrics, "lead": stories[0] if stories else None, "stories": stories, "notable": notable}
-
-    for edition in editions.values():
-        for key, metric in edition["metrics"].items():
-            values = sorted(city_values[key], reverse=True)
-            metric["city_median"] = median(values) if values else 0
-            metric["city_rank"] = values.index(metric["current"]) + 1 if metric["current"] in values else None
-            metric["city_total_neighborhoods"] = len(values)
-
-    front_page = [{"name": e["name"], "slug": e["slug"], **e["lead"]} for e in editions.values() if e["lead"]]
-    front_page.sort(key=lambda x: x["interest"], reverse=True)
-    return {
-        "generated_at": generated_at.isoformat(),
-        "source_recency": source_recency,
-        "front_page": front_page[:12],
-        "editions": editions,
-        "neighborhoods": [{"name": e["name"], "slug": e["slug"]} for e in editions.values()],
-        "methodology": {"current_window": "Trailing 7 days", "baseline": "Average weekly count during the preceding 28 days"},
-    }
+    raw = {r["key"]: r for r in raw_sources}
+    observed = {str(x.get("neighborhood") or "").strip() for r in raw_sources for x in r.get("daily", []) if x.get("neighborhood")}
+    hoods = list(ANALYSIS_NEIGHBORHOODS) + sorted(observed - set(ANALYSIS_NEIGHBORHOODS)); editions, recency, city = {}, {}, defaultdict(list)
+    for hood in hoods:
+        metrics, notes, stories = {}, {}, []
+        for cfg in SOURCES:
+            r = raw.get(cfg.key)
+            if not r: continue
+            end = date.fromisoformat(r["latest"]); recency[cfg.key] = r["latest"]
+            daily = [x for x in r.get("daily", []) if str(x.get("neighborhood") or "").strip() == hood]
+            catrows = [x for x in r.get("categories", []) if str(x.get("neighborhood") or "").strip() == hood]
+            stats, cats = metric_stats(daily, end), category_stats(catrows, end, cfg.key); recs = records(cfg, r.get("recent", []), hood)
+            notes[cfg.key] = recs; metrics[cfg.key] = {**stats, "short_label": cfg.short_label, "section": cfg.section, "categories": cats[:10], "source_url": cfg.source_url, "latest": r["latest"]}
+            city[cfg.key].append(stats["current"]); stories.append(story(cfg, hood, stats, cats, recs))
+        stories.sort(key=lambda x: x["interest"], reverse=True); key = slugify(hood)
+        editions[key] = {"name": hood, "slug": key, "metrics": metrics, "lead": stories[0] if stories else None, "stories": stories, "notable": notes}
+    for e in editions.values():
+        for key, m in e["metrics"].items():
+            vals = sorted(city[key], reverse=True); m["city_median"] = median(vals) if vals else 0; m["city_rank"] = vals.index(m["current"]) + 1 if m["current"] in vals else None; m["city_total_neighborhoods"] = len(vals)
+        e["quick_read"] = quick_read(e)
+    return {"generated_at": generated_at.isoformat(), "source_recency": recency, "front_page": front_page(editions), "editions": editions,
+            "neighborhoods": [{"name": e["name"], "slug": e["slug"]} for e in editions.values()],
+            "methodology": {"current_window": "Trailing 7 days", "baseline": "Average weekly count during the preceding 28 days", "editorial": "Routine high-volume categories are downweighted so the front page surfaces a broader mix of neighborhood developments."}}
