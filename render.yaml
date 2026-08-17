@@ -17,6 +17,14 @@ services:
         value: "7"
       - key: EVENING_REFRESH_HOUR
         value: "18"
+      - key: ATTOM_API_KEY
+        sync: false
+      - key: REALESTATE_LOOKBACK_DAYS
+        value: "45"
+      - key: REALESTATE_MAX_PAGES
+        value: "8"
+      - key: REALESTATE_PAGE_SIZE
+        value: "100"
       - key: CACHE_PATH
         value: /var/data/bulletin-cache.json
       - key: DATASF_APP_TOKEN
