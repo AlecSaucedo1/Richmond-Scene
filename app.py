@@ -18,11 +18,12 @@ from bulletin.config import SOURCES
 from bulletin.datasf import DataSFClient
 from bulletin.editorial import enrich_snapshot
 from bulletin.news import NewsContextClient
+from bulletin.political_quotes import build_quote_analysis
 from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
 REFRESH_INTERVAL_HOURS = max(1.0, float(os.getenv("REFRESH_INTERVAL_HOURS", "6")))
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 
 store = SnapshotStore()
 client = DataSFClient()
@@ -175,6 +176,23 @@ async def city(request: Request):
         request=request,
         name="city.html",
         context={"snapshot": _snapshot, "city": _snapshot.get("city_analysis", {}), "version": APP_VERSION},
+    )
+
+
+@app.get("/city-hall", response_class=HTMLResponse)
+async def city_hall(request: Request):
+    if not _snapshot:
+        return templates.TemplateResponse(
+            request=request,
+            name="building.html",
+            context={"version": APP_VERSION},
+            status_code=202,
+        )
+    analysis = build_quote_analysis(_snapshot)
+    return templates.TemplateResponse(
+        request=request,
+        name="city_hall.html",
+        context={"snapshot": _snapshot, "analysis": analysis, "version": APP_VERSION},
     )
 
 
