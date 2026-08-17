@@ -4,9 +4,10 @@ import asyncio
 import contextlib
 import os
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote_plus
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -22,8 +23,26 @@ from bulletin.political_quotes import build_quote_analysis
 from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
-REFRESH_INTERVAL_HOURS = max(1.0, float(os.getenv("REFRESH_INTERVAL_HOURS", "6")))
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.6.1"
+
+
+def _hour_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return max(0, min(23, value))
+
+
+try:
+    REFRESH_TZ = ZoneInfo(os.getenv("REFRESH_TIMEZONE", "America/Los_Angeles"))
+except ZoneInfoNotFoundError:
+    REFRESH_TZ = ZoneInfo("America/Los_Angeles")
+
+MORNING_REFRESH_HOUR = _hour_env("MORNING_REFRESH_HOUR", 7)
+EVENING_REFRESH_HOUR = _hour_env("EVENING_REFRESH_HOUR", 18)
+if EVENING_REFRESH_HOUR == MORNING_REFRESH_HOUR:
+    EVENING_REFRESH_HOUR = 18 if MORNING_REFRESH_HOUR != 18 else 7
 
 store = SnapshotStore()
 client = DataSFClient()
@@ -33,13 +52,35 @@ _snapshot_lock = asyncio.Lock()
 _last_error: str | None = None
 _source_errors: dict[str, str] = {}
 _news_error: str | None = None
+_last_refresh_reason: str | None = None
+_next_scheduled_refresh: str | None = None
 
 
-async def refresh_snapshot() -> dict:
-    global _snapshot, _last_error, _source_errors, _news_error
+def _local_now() -> datetime:
+    return datetime.now(REFRESH_TZ)
+
+
+def _next_refresh_time(now: datetime | None = None) -> datetime:
+    now = now or _local_now()
+    today = now.date()
+    candidates = [
+        datetime(today.year, today.month, today.day, MORNING_REFRESH_HOUR, 0, tzinfo=REFRESH_TZ),
+        datetime(today.year, today.month, today.day, EVENING_REFRESH_HOUR, 0, tzinfo=REFRESH_TZ),
+    ]
+    future = [candidate for candidate in candidates if candidate > now]
+    if future:
+        return min(future)
+    tomorrow = today + timedelta(days=1)
+    return datetime(tomorrow.year, tomorrow.month, tomorrow.day, MORNING_REFRESH_HOUR, 0, tzinfo=REFRESH_TZ)
+
+
+async def refresh_snapshot(reason: str = "manual") -> dict:
+    global _snapshot, _last_error, _source_errors, _news_error, _last_refresh_reason
     async with _snapshot_lock:
+        _last_refresh_reason = reason
+        local_today = _local_now().date()
         results = await asyncio.gather(
-            *(client.fetch_source(source, date.today()) for source in SOURCES),
+            *(client.fetch_source(source, local_today) for source in SOURCES),
             return_exceptions=True,
         )
 
@@ -74,9 +115,14 @@ async def refresh_snapshot() -> dict:
             fresh["source_errors"] = source_errors
             fresh["available_sources"] = [item["key"] for item in successful]
             fresh["news_error"] = _news_error
+            fresh["refresh_reason"] = reason
             store.save(fresh)
             _snapshot = fresh
             _last_error = None if not source_errors else "One or more DataSF sources are temporarily unavailable"
+            print(
+                f"Bulletin refreshed ({reason}) at {generated_at.isoformat()} using {len(successful)} DataSF sources",
+                flush=True,
+            )
             return fresh
         except Exception as exc:
             _last_error = f"{type(exc).__name__}: {exc}"
@@ -87,14 +133,29 @@ async def refresh_snapshot() -> dict:
 
 
 async def refresh_loop() -> None:
+    global _next_scheduled_refresh
+
+    # Always refresh on process start so a deploy/restart cannot leave the site stale.
+    try:
+        await refresh_snapshot("startup")
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        print(f"Startup refresh retained the last good edition: {exc}", flush=True)
+
     while True:
+        next_run = _next_refresh_time()
+        _next_scheduled_refresh = next_run.isoformat()
+        delay = max(1.0, (next_run - _local_now()).total_seconds())
+        print(f"Next scheduled Bulletin refresh: {_next_scheduled_refresh}", flush=True)
         try:
-            await refresh_snapshot()
+            await asyncio.sleep(delay)
+            label = "morning" if next_run.hour == MORNING_REFRESH_HOUR else "evening"
+            await refresh_snapshot(f"scheduled-{label}")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            print(f"Refresh loop retained the last good edition: {exc}", flush=True)
-        await asyncio.sleep(REFRESH_INTERVAL_HOURS * 3600)
+            print(f"Scheduled refresh retained the last good edition: {exc}", flush=True)
 
 
 @asynccontextmanager
@@ -116,6 +177,7 @@ templates.env.filters["quote_plus"] = quote_plus
 
 @app.get("/api/health")
 async def health() -> JSONResponse:
+    next_run = _next_scheduled_refresh or _next_refresh_time().isoformat()
     return JSONResponse(
         {
             "ok": True,
@@ -126,13 +188,20 @@ async def health() -> JSONResponse:
             "source_errors": _source_errors,
             "news_error": _news_error,
             "last_error": _last_error,
+            "last_refresh_reason": _last_refresh_reason,
+            "refresh_schedule": {
+                "timezone": str(REFRESH_TZ),
+                "morning_hour": MORNING_REFRESH_HOUR,
+                "evening_hour": EVENING_REFRESH_HOUR,
+                "next_scheduled_refresh": next_run,
+            },
         }
     )
 
 
 @app.get("/api/refresh")
 async def manual_refresh() -> JSONResponse:
-    fresh = await refresh_snapshot()
+    fresh = await refresh_snapshot("manual")
     return JSONResponse(
         {
             "ok": True,
