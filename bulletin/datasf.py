@@ -15,19 +15,46 @@ class DataSFClient:
         self.base_url = os.getenv("DATASF_BASE_URL", "https://data.sfgov.org/resource").rstrip("/")
         self.app_token = os.getenv("DATASF_APP_TOKEN", "").strip()
         self.timeout = float(os.getenv("DATASF_TIMEOUT_SECONDS", "30"))
+        self.max_retries = max(1, int(os.getenv("DATASF_MAX_RETRIES", "3")))
 
     async def _get(self, dataset_id: str, params: dict[str, str]) -> list[dict[str, Any]]:
         headers = {"User-Agent": "sf-neighborhood-bulletin/0.1"}
         if self.app_token:
             headers["X-App-Token"] = self.app_token
         url = f"{self.base_url}/{dataset_id}.json"
-        async with httpx.AsyncClient(timeout=self.timeout, headers=headers, follow_redirects=True) as client:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            payload = response.json()
-            if not isinstance(payload, list):
-                raise RuntimeError(f"Unexpected DataSF response for {dataset_id}")
-            return payload
+
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout, headers=headers, follow_redirects=True) as client:
+                    response = await client.get(url, params=params)
+
+                if response.status_code == 429 or 500 <= response.status_code < 600:
+                    if attempt < self.max_retries - 1:
+                        retry_after = response.headers.get("Retry-After")
+                        try:
+                            delay = float(retry_after) if retry_after else float(2 ** attempt)
+                        except ValueError:
+                            delay = float(2 ** attempt)
+                        await asyncio.sleep(min(delay, 8.0))
+                        continue
+
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, list):
+                    raise RuntimeError(f"Unexpected DataSF response for {dataset_id}")
+                return payload
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = exc
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(min(float(2 ** attempt), 8.0))
+                    continue
+                raise
+            except Exception as exc:
+                last_error = exc
+                raise
+
+        raise RuntimeError(f"DataSF request failed for {dataset_id}: {last_error}")
 
     @staticmethod
     def _iso_day(day: date, end: bool = False) -> str:
