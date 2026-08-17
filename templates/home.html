@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}The San Francisco Bulletin — Neighborhood Data News{% endblock %}
+{% block content %}
+{% if not snapshot %}
+<section class="building-edition"><p class="eyebrow">FIRST EDITION</p><h1>Building today's neighborhood papers</h1><p>The newsroom is pulling the latest business, building permit, 311, and police incident records from DataSF. Refresh shortly.</p></section>
+{% else %}
+<section class="date-line"><span>Latest edition</span><span>{{ snapshot.generated_at[:10] }}</span></section>
+<section class="front-grid">
+  {% set lead = snapshot.front_page[0] if snapshot.front_page else None %}
+  {% if lead %}<article class="front-lead"><a class="eyebrow" href="/neighborhood/{{ lead.slug }}">{{ lead.name }}</a><h1><a href="/neighborhood/{{ lead.slug }}">{{ lead.headline }}</a></h1><p class="lead-dek">{{ lead.dek }}</p><a class="read-more" href="/neighborhood/{{ lead.slug }}">Read the {{ lead.name }} edition →</a></article>{% endif %}
+  <aside class="front-sidebar"><p class="section-label">Across the city</p>{% for story in snapshot.front_page[1:5] %}<article class="brief"><a class="brief-neighborhood" href="/neighborhood/{{ story.slug }}">{{ story.name }}</a><h2><a href="/neighborhood/{{ story.slug }}">{{ story.headline }}</a></h2><p>{{ story.dek }}</p></article>{% endfor %}</aside>
+</section>
+<section class="section-rule"><h2>Neighborhood Desk</h2><p>Forty-one editions, each benchmarked against its own recent history.</p></section>
+<section class="edition-grid">{% for n in snapshot.neighborhoods %}{% set e = snapshot.editions[n.slug] %}{% if e.lead %}<article class="edition-card"><a class="eyebrow" href="/neighborhood/{{ n.slug }}">{{ n.name }}</a><h3><a href="/neighborhood/{{ n.slug }}">{{ e.lead.headline }}</a></h3><p>{{ e.lead.dek }}</p><div class="mini-ledger">{% for key in ['businesses','permits','service_requests','police'] %}{% if e.metrics.get(key) %}<span><strong>{{ e.metrics[key].current }}</strong> {{ e.metrics[key].short_label }}</span>{% endif %}{% endfor %}</div></article>{% endif %}{% endfor %}</section>
+<section class="source-strip"><p class="section-label">Data desk</p><h2>What this edition reads</h2><div class="source-grid"><div><strong>Business registrations</strong><span>through {{ snapshot.source_recency.businesses }}</span></div><div><strong>Building permits</strong><span>through {{ snapshot.source_recency.permits }}</span></div><div><strong>311 requests</strong><span>through {{ snapshot.source_recency.service_requests }}</span></div><div><strong>Police incidents</strong><span>through {{ snapshot.source_recency.police }}</span></div></div></section>
+{% endif %}
+{% endblock %}
