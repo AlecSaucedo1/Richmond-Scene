@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Why San Francisco Changed This Week — The San Francisco Bulletin{% endblock %}
+{% block content %}
+<section class="city-why-hero">
+  <p class="eyebrow">CITYWIDE ANALYSIS</p>
+  <h1>Why San Francisco changed this week</h1>
+  <p class="lead-dek">{{ city.summary }}</p>
+  <div class="city-why-meta"><span>{{ city.news_count or 0 }} recent articles considered</span><span>Data through each source's latest available date</span></div>
+</section>
+
+<section class="section-rule"><h2>The four signals</h2><p>Raw movement first, then the plausible explanation and reporting around it.</p></section>
+<section class="city-theme-stack">
+{% for theme in city.themes %}
+<article class="city-theme" id="city-{{ theme.key }}">
+  <header class="city-theme-head">
+    <div><p class="section-label">{{ theme.label }}</p><h2>{{ theme.headline }}</h2></div>
+    <div class="city-theme-number"><strong>{{ theme.metric.current }}</strong><span>{% if theme.metric.pct_change is not none %}{{ '%+.0f'|format(theme.metric.pct_change) }}% vs. recent weekly average{% else %}latest week{% endif %}</span></div>
+  </header>
+  <div class="city-theme-body">
+    <div class="city-theme-explainer">
+      <h3>Why it may be happening</h3>
+      <p>{{ theme.why }}</p>
+      <p class="editorial-caution">The Bulletin treats news overlap as context, not proof that a reported event caused the data movement.</p>
+    </div>
+    <div class="city-theme-neighborhoods">
+      <h3>Neighborhoods moving the number</h3>
+      {% for item in theme.neighborhoods %}
+      <a href="/neighborhood/{{ item.slug }}#story-{{ theme.key }}"><span>{{ item.name }}</span><strong>{% if item.delta > 0 %}+{% endif %}{{ item.delta }}</strong><small>{{ item.current }} latest records</small></a>
+      {% endfor %}
+    </div>
+  </div>
+  {% if theme.coverage %}
+  <div class="coverage-row">
+    <p class="coverage-kicker">Recent reporting to read alongside the data</p>
+    <div class="coverage-grid">
+      {% for article in theme.coverage %}
+      <a class="coverage-card" href="{{ article.url }}" target="_blank" rel="noopener noreferrer">
+        <span>{{ article.publisher }}</span>
+        <h3>{{ article.title }}</h3>
+        {% if article.summary %}<p>{{ article.summary }}</p>{% endif %}
+        <em>Read coverage ↗</em>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</article>
+{% endfor %}
+</section>
+
+{% if city.crossovers %}
+<section class="section-rule"><h2>Where data and news intersect</h2><p>Neighborhood signals with a recent article that may help explain what is happening.</p></section>
+<section class="crossover-grid">
+{% for item in city.crossovers %}
+<article class="crossover-card">
+  <a class="eyebrow" href="/neighborhood/{{ item.slug }}">{{ item.name }} · {{ item.section }}</a>
+  <h3><a href="/neighborhood/{{ item.slug }}">{{ item.headline }}</a></h3>
+  <div class="crossover-arrow">Data signal <span>→</span> recent reporting</div>
+  <a class="crossover-article" href="{{ item.article.url }}" target="_blank" rel="noopener noreferrer">
+    <span>{{ item.article.publisher }}</span>
+    <strong>{{ item.article.title }}</strong>
+    {% if item.article.match_reason %}<small>{{ item.article.match_reason }}</small>{% endif %}
+  </a>
+</article>
+{% endfor %}
+</section>
+{% endif %}
+
+<section class="methodology"><p class="section-label">How to read this page</p><p>The city page aggregates neighborhood-level public-record counts and compares the latest seven-day window with the preceding four-week weekly average. Recent reporting is matched by neighborhood names, beat and specific business or permit details when available. These matches are editorial context, not causal claims. News links lead to the publisher or Google News result supplied by the live feed.</p></section>
+{% endblock %}
