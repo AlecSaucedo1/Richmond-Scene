@@ -86,11 +86,15 @@
     {% else %}<p class="muted">No new business-location records in the current source window.</p>{% endfor %}
   </div>
   <div>
-    <p class="section-label">Largest permit filings</p>
+    <p class="section-label">Development & housing filings</p>
     {% for item in edition.notable.permits[:5] %}
     <article class="record-item">
       <div class="record-heading"><h3>{{ item.address or item.title }}</h3>{% if item.cost %}<strong>${{ '{:,.0f}'.format(item.cost) }}</strong>{% endif %}</div>
       <p>{{ item.title }}{% if item.status %} · {{ item.status }}{% endif %}</p>
+      {% if item.unit_delta is not none and item.existing_units is not none and item.proposed_units is not none and item.unit_delta != 0 %}
+      <p class="housing-change"><strong>{{ item.existing_units }} → {{ item.proposed_units }} units</strong> · {% if item.unit_delta > 0 %}+{{ item.unit_delta }} proposed{% else %}{{ item.unit_delta }} proposed{% endif %}</p>
+      {% endif %}
+      {% if item.proposed_use and item.proposed_use != item.existing_use %}<p class="muted">Use: {{ item.existing_use or 'not listed' }} → {{ item.proposed_use }}</p>{% endif %}
       {% if item.description %}<p class="muted">{{ item.description }}</p>{% endif %}
     </article>
     {% else %}<p class="muted">No permit records in the current source window.</p>{% endfor %}
@@ -112,5 +116,5 @@
 {% endfor %}
 </section>
 
-<section class="methodology"><p class="section-label">Editor's note</p><p>Each dataset is anchored to its latest available date. The current count covers seven trailing days; the comparison is the average weekly count over the preceding 28 days. Routine high-volume 311 categories are deliberately downweighted in headline selection so they do not crowd out business, development and other neighborhood signals. A higher record count is not inherently good or bad. Police records represent reported incidents, not a measure of victimization or neighborhood safety.</p></section>
+<section class="methodology"><p class="section-label">Editor's note</p><p>Each dataset is anchored to its latest available date. The current count covers seven trailing days; the comparison is the average weekly count over the preceding 28 days. Permit unit changes are reported as proposals in a filing, not as approved or completed housing. Routine high-volume 311 categories are deliberately downweighted in headline selection so they do not crowd out business, development and other neighborhood signals. A higher record count is not inherently good or bad. Police records represent reported incidents, not a measure of victimization or neighborhood safety.</p></section>
 {% endblock %}
