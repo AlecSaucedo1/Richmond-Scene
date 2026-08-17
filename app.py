@@ -21,7 +21,7 @@ from bulletin.editorial import enrich_snapshot
 from bulletin.nearby import NeighborhoodLocator, build_happenings
 from bulletin.news import NewsContextClient
 from bulletin.political_quotes import build_quote_analysis
-from bulletin.realestate import RealEstateClient
+from bulletin.realestate_safe import RealEstateClient
 from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
