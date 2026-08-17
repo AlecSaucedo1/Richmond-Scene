@@ -4,8 +4,8 @@
 <section class="city-hall-hero">
   <p class="eyebrow">CITY HALL VS. THE DATA</p>
   <h1>What they said. What the numbers say.</h1>
-  <p class="lead-dek">Recent statements from the Mayor, supervisors and other public officials checked against the Bulletin’s neighborhood datasets—without pretending the data can answer questions it does not measure.</p>
-  <div class="city-why-meta"><span>{{ analysis.cards|length }} sourced statements</span><span>Updated with the current Bulletin snapshot</span></div>
+  <p class="lead-dek">Statements from {{ analysis.year }} by the Mayor and supervisors, checked only where the Bulletin’s current business, development, 311 or police data can add meaningful evidence.</p>
+  <div class="city-why-meta"><span>{{ analysis.cards|length }} sourced statements from {{ analysis.year }}</span><span>Updated with the current Bulletin snapshot</span></div>
 </section>
 
 <section class="quote-toolbar" aria-label="Filter political statements">
@@ -14,7 +14,6 @@
     <button class="filter-chip" type="button" data-quote-filter="support">Supported</button>
     <button class="filter-chip" type="button" data-quote-filter="mixed">Mixed</button>
     <button class="filter-chip" type="button" data-quote-filter="tension">In tension</button>
-    <button class="filter-chip" type="button" data-quote-filter="neutral">Not testable</button>
   </div>
   <span class="filter-count" data-quote-count aria-live="polite"></span>
 </section>
@@ -54,12 +53,11 @@
 {% endfor %}
 </section>
 
-<section class="section-rule"><h2>How to read the verdicts</h2><p>Agreement in direction is not the same as verifying a politician’s exact figure or causal explanation.</p></section>
+<section class="section-rule"><h2>How to read the verdicts</h2><p>The page only includes claims where current Bulletin data can add useful evidence.</p></section>
 <section class="verdict-guide">
   <div><strong>Directionally supported</strong><p>The current Bulletin data moves in the same direction as the statement, with timeframe or scope caveats.</p></div>
-  <div><strong>Mixed</strong><p>Some data aligns and some does not, or the claim combines several ideas the data measures differently.</p></div>
+  <div><strong>Mixed</strong><p>The evidence is flat, split across metrics, or adds important qualifications to the political framing.</p></div>
   <div><strong>Current data runs the other way</strong><p>The latest short-window signal moves opposite the framing. This is a flag for scrutiny, not proof the original statement was false.</p></div>
-  <div><strong>Not directly testable</strong><p>The claim concerns something outside the current feeds, such as fiscal forecasts, traffic speeds, causation or policy effectiveness.</p></div>
 </section>
 
 <section class="methodology"><p class="section-label">Methodology</p><p>{{ analysis.methodology }} Quotes are short excerpts linked to their original source. The Bulletin does not assign partisan scores and does not infer intent.</p></section>
