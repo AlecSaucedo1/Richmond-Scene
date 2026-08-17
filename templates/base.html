@@ -10,19 +10,21 @@
   <link rel="stylesheet" href="/static/interactive.css?v={{ version }}">
   <link rel="stylesheet" href="/static/web-context.css?v={{ version }}">
   <link rel="stylesheet" href="/static/editorial.css?v={{ version }}">
+  <link rel="stylesheet" href="/static/realestate.css?v={{ version }}">
   <script src="/static/app.js?v={{ version }}" defer></script>
   <script src="/static/editorial.js?v={{ version }}" defer></script>
   <script src="/static/cityhall.js?v={{ version }}" defer></script>
+  <script src="/static/realestate.js?v={{ version }}" defer></script>
 </head>
 <body>
   <header class="site-header">
     <div class="utility-bar"><a href="/">San Francisco, California</a><span>Public records. Local context. The why behind the numbers.</span></div>
     <a class="masthead" href="/"><span class="masthead-kicker">THE</span><span class="masthead-name">SAN FRANCISCO BULLETIN</span><span class="masthead-rule">Neighborhood editions from the city's public record</span></a>
     {% if snapshot and snapshot.neighborhoods %}
-    <nav class="edition-nav" aria-label="Neighborhood editions"><span>EDITIONS</span><a class="city-link" href="/city">CITYWIDE WHY</a><a class="city-hall-link" href="/city-hall">CITY HALL VS DATA</a><select id="edition-picker" aria-label="Choose a neighborhood"><option value="">Choose a neighborhood</option>{% for n in snapshot.neighborhoods %}<option value="/neighborhood/{{ n.slug }}">{{ n.name }}</option>{% endfor %}</select></nav>
+    <nav class="edition-nav" aria-label="Neighborhood editions"><span>EDITIONS</span><a class="city-link" href="/city">CITYWIDE WHY</a><a class="city-link" href="/real-estate">REAL ESTATE</a><a class="city-hall-link" href="/city-hall">CITY HALL VS DATA</a><select id="edition-picker" aria-label="Choose a neighborhood"><option value="">Choose a neighborhood</option>{% for n in snapshot.neighborhoods %}<option value="/neighborhood/{{ n.slug }}">{{ n.name }}</option>{% endfor %}</select></nav>
     {% endif %}
   </header>
   <main>{% block content %}{% endblock %}</main>
-  <footer class="site-footer"><strong>The San Francisco Bulletin</strong><p>Automated neighborhood reporting from official DataSF records, paired with recent independent reporting for context. Counts are descriptive; news matches and political-statement checks include scope and timeframe caveats.</p><p>v{{ version }}</p></footer>
+  <footer class="site-footer"><strong>The San Francisco Bulletin</strong><p>Automated neighborhood reporting from official DataSF records, recent independent reporting and recorder-backed property-sale data when available. Counts and sales records are descriptive; news matches and political-statement checks include scope and timeframe caveats.</p><p>v{{ version }}</p></footer>
 </body>
 </html>
