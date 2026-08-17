@@ -11,8 +11,12 @@ services:
     envVars:
       - key: DATASF_BASE_URL
         value: https://data.sfgov.org/resource
-      - key: REFRESH_INTERVAL_HOURS
-        value: "6"
+      - key: REFRESH_TIMEZONE
+        value: America/Los_Angeles
+      - key: MORNING_REFRESH_HOUR
+        value: "7"
+      - key: EVENING_REFRESH_HOUR
+        value: "18"
       - key: CACHE_PATH
         value: /var/data/bulletin-cache.json
       - key: DATASF_APP_TOKEN
