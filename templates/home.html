@@ -7,11 +7,53 @@
 <section class="date-line"><span>Latest edition</span><span>{{ snapshot.generated_at[:10] }}</span></section>
 <section class="front-grid">
   {% set lead = snapshot.front_page[0] if snapshot.front_page else None %}
-  {% if lead %}<article class="front-lead"><a class="eyebrow" href="/neighborhood/{{ lead.slug }}">{{ lead.name }}</a><h1><a href="/neighborhood/{{ lead.slug }}">{{ lead.headline }}</a></h1><p class="lead-dek">{{ lead.dek }}</p><a class="read-more" href="/neighborhood/{{ lead.slug }}">Read the {{ lead.name }} edition →</a></article>{% endif %}
-  <aside class="front-sidebar"><p class="section-label">Across the city</p>{% for story in snapshot.front_page[1:5] %}<article class="brief"><a class="brief-neighborhood" href="/neighborhood/{{ story.slug }}">{{ story.name }}</a><h2><a href="/neighborhood/{{ story.slug }}">{{ story.headline }}</a></h2><p>{{ story.dek }}</p></article>{% endfor %}</aside>
+  {% if lead %}
+  <article class="front-lead">
+    <a class="eyebrow" href="/neighborhood/{{ lead.slug }}">{{ lead.name }} · {{ lead.section }}</a>
+    <h1><a href="/neighborhood/{{ lead.slug }}">{{ lead.headline }}</a></h1>
+    <p class="lead-dek">{{ lead.dek }}</p>
+    {% if lead.facts %}<ul class="fact-list compact">{% for fact in lead.facts[:2] %}<li>{{ fact }}</li>{% endfor %}</ul>{% endif %}
+    <a class="read-more" href="/neighborhood/{{ lead.slug }}">Read the {{ lead.name }} edition →</a>
+  </article>
+  {% endif %}
+  <aside class="front-sidebar"><p class="section-label">Across the city</p>
+    {% for story in snapshot.front_page[1:5] %}
+    <article class="brief"><a class="brief-neighborhood" href="/neighborhood/{{ story.slug }}">{{ story.name }} · {{ story.section }}</a><h2><a href="/neighborhood/{{ story.slug }}">{{ story.headline }}</a></h2><p>{{ story.dek }}</p></article>
+    {% endfor %}
+  </aside>
 </section>
+
+<section class="section-rule"><h2>City Desk</h2><p>A deliberately mixed front page: business, development, civic services and public safety.</p></section>
+<section class="city-desk-grid">
+  {% for story in snapshot.front_page[5:9] %}
+  <article class="desk-card"><p class="section-label">{{ story.name }} · {{ story.section }}</p><h3><a href="/neighborhood/{{ story.slug }}">{{ story.headline }}</a></h3><p>{{ story.dek }}</p></article>
+  {% endfor %}
+</section>
+
 <section class="section-rule"><h2>Neighborhood Desk</h2><p>Forty-one editions, each benchmarked against its own recent history.</p></section>
-<section class="edition-grid">{% for n in snapshot.neighborhoods %}{% set e = snapshot.editions[n.slug] %}{% if e.lead %}<article class="edition-card"><a class="eyebrow" href="/neighborhood/{{ n.slug }}">{{ n.name }}</a><h3><a href="/neighborhood/{{ n.slug }}">{{ e.lead.headline }}</a></h3><p>{{ e.lead.dek }}</p><div class="mini-ledger">{% for key in ['businesses','permits','service_requests','police'] %}{% if e.metrics.get(key) %}<span><strong>{{ e.metrics[key].current }}</strong> {{ e.metrics[key].short_label }}</span>{% endif %}{% endfor %}</div></article>{% endif %}{% endfor %}</section>
-<section class="source-strip"><p class="section-label">Data desk</p><h2>What this edition reads</h2><div class="source-grid"><div><strong>Business registrations</strong><span>through {{ snapshot.source_recency.businesses }}</span></div><div><strong>Building permits</strong><span>through {{ snapshot.source_recency.permits }}</span></div><div><strong>311 requests</strong><span>through {{ snapshot.source_recency.service_requests }}</span></div><div><strong>Police incidents</strong><span>through {{ snapshot.source_recency.police }}</span></div></div></section>
+<section class="edition-grid">
+{% for n in snapshot.neighborhoods %}
+  {% set e = snapshot.editions[n.slug] %}
+  {% if e.lead %}
+  <article class="edition-card">
+    <a class="eyebrow" href="/neighborhood/{{ n.slug }}">{{ n.name }} · {{ e.lead.section }}</a>
+    <h3><a href="/neighborhood/{{ n.slug }}">{{ e.lead.headline }}</a></h3>
+    <p>{{ e.lead.dek }}</p>
+    <div class="mini-ledger">
+      {% for key in ['businesses','permits','service_requests','police'] %}
+        {% if e.metrics.get(key) %}<span><strong>{{ e.metrics[key].current }}</strong> {{ e.metrics[key].short_label }}</span>{% endif %}
+      {% endfor %}
+    </div>
+  </article>
+  {% endif %}
+{% endfor %}
+</section>
+
+<section class="source-strip"><p class="section-label">Data desk</p><h2>What this edition reads</h2><div class="source-grid">
+{% if snapshot.source_recency.get('businesses') %}<div><strong>Business registrations</strong><span>through {{ snapshot.source_recency.businesses }}</span></div>{% endif %}
+{% if snapshot.source_recency.get('permits') %}<div><strong>Building permits</strong><span>through {{ snapshot.source_recency.permits }}</span></div>{% endif %}
+{% if snapshot.source_recency.get('service_requests') %}<div><strong>311 requests</strong><span>through {{ snapshot.source_recency.service_requests }}</span></div>{% endif %}
+{% if snapshot.source_recency.get('police') %}<div><strong>Police incidents</strong><span>through {{ snapshot.source_recency.police }}</span></div>{% endif %}
+</div></section>
 {% endif %}
 {% endblock %}
