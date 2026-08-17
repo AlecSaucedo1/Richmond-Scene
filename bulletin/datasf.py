@@ -18,7 +18,7 @@ class DataSFClient:
         self.max_retries = max(1, int(os.getenv("DATASF_MAX_RETRIES", "3")))
 
     async def _get(self, dataset_id: str, params: dict[str, str]) -> list[dict[str, Any]]:
-        headers = {"User-Agent": "sf-neighborhood-bulletin/0.1"}
+        headers = {"User-Agent": "sf-neighborhood-bulletin/0.2"}
         if self.app_token:
             headers["X-App-Token"] = self.app_token
         url = f"{self.base_url}/{dataset_id}.json"
@@ -116,18 +116,34 @@ class DataSFClient:
     async def recent_records(self, config: SourceConfig, end_day: date, days: int = 7) -> list[dict[str, Any]]:
         if not config.notable_fields:
             return []
+
         start_day = end_day - timedelta(days=days - 1)
-        params = {
-            "$select": ",".join(config.notable_fields),
-            "$where": (
-                f"{config.neighborhood_field} is not null and "
-                f"{config.date_field} >= '{self._iso_day(start_day)}' and "
-                f"{config.date_field} <= '{self._iso_day(end_day, end=True)}'"
-            ),
-            "$order": f"{config.date_field} desc",
-            "$limit": "5000",
-        }
-        return await self._get(config.dataset_id, params)
+        page_size = 5000
+        # 311 routinely exceeds 5,000 records citywide in a seven-day window. Paginating
+        # prevents later-sorted neighborhoods from disappearing from the record-level ledger.
+        max_rows = 25000 if config.key == "service_requests" else 10000
+        rows: list[dict[str, Any]] = []
+        offset = 0
+
+        while len(rows) < max_rows:
+            params = {
+                "$select": ",".join(config.notable_fields),
+                "$where": (
+                    f"{config.neighborhood_field} is not null and "
+                    f"{config.date_field} >= '{self._iso_day(start_day)}' and "
+                    f"{config.date_field} <= '{self._iso_day(end_day, end=True)}'"
+                ),
+                "$order": f"{config.date_field} desc",
+                "$limit": str(min(page_size, max_rows - len(rows))),
+                "$offset": str(offset),
+            }
+            page = await self._get(config.dataset_id, params)
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+            offset += len(page)
+
+        return rows
 
     async def fetch_source(self, config: SourceConfig, today: date) -> dict[str, Any]:
         latest = await self.latest_date(config, today)
