@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Happenings Near You — The San Francisco Bulletin{% endblock %}
+{% block content %}
+<section class="near-you" data-near-you>
+  <div class="near-you-hero">
+    <p class="eyebrow">Happenings Near You</p>
+    <h1>Your neighborhood, in one local briefing.</h1>
+    <p class="near-you-intro">Use your location to surface the Bulletin's latest business, development, city-service and public-safety signals, plus relevant City Hall statements and a recent restaurant review.</p>
+    <div class="near-you-controls">
+      <button id="locate-me" class="near-you-button" type="button">Use my location</button>
+      <span class="near-you-or">or</span>
+      <label for="nearby-edition-picker">Choose a neighborhood</label>
+      <select id="nearby-edition-picker">
+        <option value="">Select an edition</option>
+        {% for n in snapshot.neighborhoods %}<option value="{{ n.slug }}">{{ n.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <p class="near-you-privacy">Your coordinates are used only to choose the closest San Francisco edition for this request; the Bulletin does not store them.</p>
+    <p id="nearby-status" class="near-you-status" role="status">Choose your location to build the briefing.</p>
+  </div>
+
+  <div id="nearby-results" class="nearby-results" hidden>
+    <div class="nearby-edition-heading">
+      <div>
+        <p class="eyebrow">Closest Bulletin edition</p>
+        <h2 id="nearby-name"></h2>
+        <p id="nearby-location-note" class="muted"></p>
+      </div>
+      <a id="nearby-edition-link" class="source-link" href="#">Open full neighborhood edition →</a>
+    </div>
+
+    <section>
+      <div class="section-rule">
+        <h2>What’s happening</h2>
+        <p>Latest public-record signals across every Bulletin desk</p>
+      </div>
+      <div id="nearby-sections" class="nearby-section-grid"></div>
+    </section>
+
+    <section>
+      <div class="section-rule">
+        <h2>City Hall near you</h2>
+        <p>Current-year statements the Bulletin's data can test</p>
+      </div>
+      <div id="nearby-politics" class="nearby-politics"></div>
+    </section>
+
+    <section>
+      <div class="section-rule">
+        <h2>Restaurant review</h2>
+        <p>A recent San Francisco dining review, weighted toward your neighborhood</p>
+      </div>
+      <div id="nearby-restaurant" class="nearby-restaurant"></div>
+    </section>
+  </div>
+</section>
+{% endblock %}
