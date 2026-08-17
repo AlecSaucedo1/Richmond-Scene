@@ -25,7 +25,7 @@ from bulletin.realestate import RealEstateClient
 from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.9.0"
 
 
 def _hour_env(name: str, default: int) -> int:
@@ -144,7 +144,8 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
             fresh["restaurant_reviews"] = restaurant_reviews
             fresh["real_estate"] = real_estate_data or {
                 "configured": False,
-                "source": "ATTOM recorder-backed sales data",
+                "source": "Free public web + DataSF",
+                "source_window": "Latest published transaction sources",
                 "sales_count": 0,
                 "neighborhoods": {},
                 "city": {},
