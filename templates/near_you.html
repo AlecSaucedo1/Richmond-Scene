@@ -3,26 +3,26 @@
 {% block content %}
 <section class="near-you" data-near-you>
   <div class="near-you-hero">
-    <p class="eyebrow">Happenings Near You</p>
+    <p class="eyebrow">HAPPENINGS NEAR YOU</p>
     <h1>Your neighborhood, in one local briefing.</h1>
-    <p class="near-you-intro">Use your location to surface the Bulletin's latest business, development, city-service and public-safety signals, plus relevant City Hall statements and a recent restaurant review.</p>
+    <p class="near-you-intro">A location-aware briefing across business, development, city services, public safety, real estate and City Hall—plus recent local reporting and a restaurant review.</p>
     <div class="near-you-controls">
       <button id="locate-me" class="near-you-button" type="button">Use my location</button>
       <span class="near-you-or">or</span>
       <label for="nearby-edition-picker">Choose a neighborhood</label>
       <select id="nearby-edition-picker">
         <option value="">Select an edition</option>
-        {% for n in snapshot.neighborhoods %}<option value="{{ n.slug }}">{{ n.name }}</option>{% endfor %}
+        {% if snapshot %}{% for n in snapshot.neighborhoods %}<option value="{{ n.slug }}">{{ n.name }}</option>{% endfor %}{% endif %}
       </select>
     </div>
-    <p class="near-you-privacy">Your coordinates are used only to choose the closest San Francisco edition for this request; the Bulletin does not store them.</p>
-    <p id="nearby-status" class="near-you-status" role="status">Choose your location to build the briefing.</p>
+    <p class="near-you-privacy">The browser sends your coordinates in the request body only to resolve an Analysis Neighborhood. They are not saved into the Bulletin snapshot or placed in the request URL.</p>
+    <p id="nearby-status" class="near-you-status" role="status">Checking your location…</p>
   </div>
 
   <div id="nearby-results" class="nearby-results" hidden>
     <div class="nearby-edition-heading">
       <div>
-        <p class="eyebrow">Closest Bulletin edition</p>
+        <p class="eyebrow">YOUR LOCAL BULLETIN</p>
         <h2 id="nearby-name"></h2>
         <p id="nearby-location-note" class="muted"></p>
       </div>
@@ -30,26 +30,27 @@
     </div>
 
     <section>
-      <div class="section-rule">
-        <h2>What’s happening</h2>
-        <p>Latest public-record signals across every Bulletin desk</p>
-      </div>
+      <div class="section-rule"><h2>What’s happening</h2><p>Latest public-record signals across every core Bulletin desk.</p></div>
       <div id="nearby-sections" class="nearby-section-grid"></div>
     </section>
 
+    <section id="nearby-real-estate-section">
+      <div class="section-rule"><h2>Real estate near you</h2><p>Notable recent recorded sales when the property-sales feed is available.</p></div>
+      <div id="nearby-real-estate" class="nearby-section-grid"></div>
+    </section>
+
     <section>
-      <div class="section-rule">
-        <h2>City Hall near you</h2>
-        <p>Current-year statements the Bulletin's data can test</p>
-      </div>
+      <div class="section-rule"><h2>Recent reporting</h2><p>Local coverage matched to the neighborhood’s current data signals.</p></div>
+      <div id="nearby-coverage" class="nearby-politics"></div>
+    </section>
+
+    <section>
+      <div class="section-rule"><h2>City Hall near you</h2><p>Current-year statements the Bulletin’s data can meaningfully check.</p></div>
       <div id="nearby-politics" class="nearby-politics"></div>
     </section>
 
     <section>
-      <div class="section-rule">
-        <h2>Restaurant review</h2>
-        <p>A recent San Francisco dining review, weighted toward your neighborhood</p>
-      </div>
+      <div class="section-rule"><h2>Restaurant review</h2><p>A recent San Francisco dining review, weighted toward your neighborhood.</p></div>
       <div id="nearby-restaurant" class="nearby-restaurant"></div>
     </section>
   </div>
