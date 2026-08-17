@@ -15,6 +15,7 @@ class SourceConfig:
     section: str
     source_url: str
     notable_fields: tuple[str, ...] = ()
+    editorial_weight: float = 1.0
 
 
 SOURCES: tuple[SourceConfig, ...] = (
@@ -28,7 +29,14 @@ SOURCES: tuple[SourceConfig, ...] = (
         category_field=None,
         section="Business Desk",
         source_url="https://data.sfgov.org/d/g8m3-pdis",
-        notable_fields=("dba_name", "full_business_address", "location_start_date", "neighborhoods_analysis_boundaries"),
+        notable_fields=(
+            "dba_name",
+            "ownership_name",
+            "full_business_address",
+            "location_start_date",
+            "neighborhoods_analysis_boundaries",
+        ),
+        editorial_weight=1.30,
     ),
     SourceConfig(
         key="permits",
@@ -52,6 +60,7 @@ SOURCES: tuple[SourceConfig, ...] = (
             "street_suffix",
             "neighborhoods_analysis_boundaries",
         ),
+        editorial_weight=1.45,
     ),
     SourceConfig(
         key="service_requests",
@@ -63,6 +72,17 @@ SOURCES: tuple[SourceConfig, ...] = (
         category_field="service_name",
         section="City Services",
         source_url="https://data.sfgov.org/d/vw6y-z8j6",
+        notable_fields=(
+            "service_request_id",
+            "requested_datetime",
+            "service_name",
+            "service_subtype",
+            "service_details",
+            "address",
+            "status_description",
+            "analysis_neighborhood",
+        ),
+        editorial_weight=0.58,
     ),
     SourceConfig(
         key="police",
@@ -74,6 +94,16 @@ SOURCES: tuple[SourceConfig, ...] = (
         category_field="incident_category",
         section="Public Safety",
         source_url="https://data.sfgov.org/d/wg3w-h783",
+        notable_fields=(
+            "incident_datetime",
+            "incident_category",
+            "incident_subcategory",
+            "incident_description",
+            "intersection",
+            "resolution",
+            "analysis_neighborhood",
+        ),
+        editorial_weight=0.92,
     ),
 )
 
