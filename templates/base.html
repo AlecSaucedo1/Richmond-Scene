@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A neighborhood newspaper assembled from San Francisco public data.">
+  <title>{% block title %}The San Francisco Bulletin{% endblock %}</title>
+  <link rel="stylesheet" href="/static/styles.css?v={{ version }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="utility-bar"><a href="/">San Francisco, California</a><span>Public records. Local context.</span></div>
+    <a class="masthead" href="/"><span class="masthead-kicker">THE</span><span class="masthead-name">SAN FRANCISCO BULLETIN</span><span class="masthead-rule">Neighborhood editions from the city's public record</span></a>
+    {% if snapshot and snapshot.neighborhoods %}
+    <nav class="edition-nav" aria-label="Neighborhood editions"><span>EDITIONS</span><select onchange="if(this.value) location.href=this.value" aria-label="Choose a neighborhood"><option value="">Choose a neighborhood</option>{% for n in snapshot.neighborhoods %}<option value="/neighborhood/{{ n.slug }}">{{ n.name }}</option>{% endfor %}</select></nav>
+    {% endif %}
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <footer class="site-footer"><strong>The San Francisco Bulletin</strong><p>Automated neighborhood reporting from official DataSF records. Counts are descriptive, not predictions or official City analysis.</p><p>v{{ version }}</p></footer>
+</body>
+</html>
