@@ -1,11 +1,116 @@
 {% extends "base.html" %}
 {% block title %}{{ edition.name }} Bulletin — The San Francisco Bulletin{% endblock %}
 {% block content %}
-<section class="edition-heading"><p class="eyebrow">NEIGHBORHOOD EDITION</p><h1>{{ edition.name }} Bulletin</h1><div class="edition-meta"><span>Latest seven-day public-record window</span><span>Updated {{ snapshot.generated_at[:10] }}</span></div></section>
-{% if edition.lead %}<section class="neighborhood-front"><article class="lead-story"><p class="section-label">{{ edition.lead.section }}</p><h2>{{ edition.lead.headline }}</h2><p class="lead-dek">{{ edition.lead.dek }}</p><a class="source-link" href="{{ edition.lead.source_url }}" target="_blank" rel="noopener">View source dataset ↗</a></article><aside class="ledger"><p class="section-label">By the numbers</p>{% for key in ['businesses','permits','service_requests','police'] %}{% set metric = edition.metrics.get(key) %}{% if metric %}<div class="ledger-row"><div><strong>{{ metric.current }}</strong><span>{{ metric.short_label }}</span></div><div class="change {% if metric.pct_change and metric.pct_change > 0 %}up{% elif metric.pct_change and metric.pct_change < 0 %}down{% endif %}">{% if metric.pct_change is not none %}{{ '%+.0f'|format(metric.pct_change) }}%{% else %}—{% endif %}</div></div>{% endif %}{% endfor %}<p class="ledger-note">Change vs. the average weekly count during the previous four weeks.</p></aside></section>{% endif %}
-<section class="section-rule"><h2>Around {{ edition.name }}</h2><p>Signals selected for how far they moved from the neighborhood's recent baseline.</p></section>
-<section class="story-columns">{% for story in edition.stories %}{% if not edition.lead or story.source != edition.lead.source %}<article class="story-card"><p class="section-label">{{ story.section }}</p><h3>{{ story.headline }}</h3><p>{{ story.dek }}</p>{% set metric = edition.metrics[story.source] %}{% if metric.categories %}<div class="category-list">{% for category in metric.categories[:3] %}<div><span>{{ category.category }}</span><strong>{{ category.current }}</strong></div>{% endfor %}</div>{% endif %}<a class="source-link" href="{{ story.source_url }}" target="_blank" rel="noopener">DataSF source ↗</a></article>{% endif %}{% endfor %}</section>
-{% if edition.notable.businesses or edition.notable.permits %}<section class="section-rule"><h2>The Neighborhood Ledger</h2><p>Notable records filed in the latest source window.</p></section><section class="ledger-columns"><div><p class="section-label">New business locations</p>{% for item in edition.notable.businesses[:6] %}<article class="record-item"><h3>{{ item.title }}</h3><p>{{ item.address }}</p></article>{% else %}<p class="muted">No new business-location records in the current source window.</p>{% endfor %}</div><div><p class="section-label">Largest permit filings</p>{% for item in edition.notable.permits[:5] %}<article class="record-item"><div class="record-heading"><h3>{{ item.title }}</h3>{% if item.cost %}<strong>${{ '{:,.0f}'.format(item.cost) }}</strong>{% endif %}</div><p>{{ item.address }}</p>{% if item.description %}<p class="muted">{{ item.description[:180] }}{% if item.description|length > 180 %}…{% endif %}</p>{% endif %}</article>{% else %}<p class="muted">No permit records in the current source window.</p>{% endfor %}</div></section>{% endif %}
-<section class="section-rule"><h2>How this neighborhood compares</h2><p>Ranked by latest seven-day record count across the 41 Analysis Neighborhoods.</p></section><section class="comparison-grid">{% for key in ['businesses','permits','service_requests','police'] %}{% set metric = edition.metrics.get(key) %}{% if metric %}<div class="comparison-card"><span>{{ metric.short_label }}</span><strong>#{{ metric.city_rank }}</strong><small>of {{ metric.city_total_neighborhoods }} · city median {{ '%.0f'|format(metric.city_median) }}</small></div>{% endif %}{% endfor %}</section>
-<section class="methodology"><p class="section-label">Editor's note</p><p>Each dataset is anchored to its latest available date. The current count covers seven trailing days; the comparison is the average weekly count over the preceding 28 days. A higher record count is not inherently good or bad. Police records represent reported incidents, not a measure of victimization or neighborhood safety.</p></section>
+<section class="edition-heading">
+  <p class="eyebrow">NEIGHBORHOOD EDITION</p>
+  <h1>{{ edition.name }} Bulletin</h1>
+  <div class="edition-meta"><span>Latest public-record signals</span><span>Updated {{ snapshot.generated_at[:10] }}</span></div>
+</section>
+
+{% if edition.lead %}
+<section class="neighborhood-front">
+  <article class="lead-story">
+    <p class="section-label">{{ edition.lead.section }}</p>
+    <h2>{{ edition.lead.headline }}</h2>
+    <p class="lead-dek">{{ edition.lead.dek }}</p>
+    {% if edition.lead.facts %}
+    <ul class="fact-list">{% for fact in edition.lead.facts %}<li>{{ fact }}</li>{% endfor %}</ul>
+    {% endif %}
+    <a class="source-link" href="{{ edition.lead.source_url }}" target="_blank" rel="noopener">View source dataset ↗</a>
+  </article>
+  <aside class="ledger">
+    <p class="section-label">By the numbers</p>
+    {% for key in ['businesses','permits','service_requests','police'] %}
+      {% set metric = edition.metrics.get(key) %}
+      {% if metric %}
+      <div class="ledger-row">
+        <div><strong>{{ metric.current }}</strong><span>{{ metric.short_label }}</span></div>
+        <div class="change {% if metric.pct_change and metric.pct_change > 0 %}up{% elif metric.pct_change and metric.pct_change < 0 %}down{% endif %}">{% if metric.pct_change is not none %}{{ '%+.0f'|format(metric.pct_change) }}%{% else %}—{% endif %}</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+    <p class="ledger-note">Change vs. the average weekly count during the previous four weeks. Each source uses its own latest available date.</p>
+  </aside>
+</section>
+{% endif %}
+
+{% if edition.quick_read %}
+<section class="quick-read">
+  <p class="section-label">The quick read</p>
+  <div class="quick-read-grid">
+    {% for item in edition.quick_read %}<div><span>{{ item.label }}</span><strong>{{ item.text }}</strong></div>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="section-rule"><h2>Around {{ edition.name }}</h2><p>Stories are selected for specificity, scale and change from the neighborhood's recent baseline.</p></section>
+<section class="story-columns">
+{% for story in edition.stories %}
+  {% if not edition.lead or story.source != edition.lead.source %}
+  <article class="story-card">
+    <p class="section-label">{{ story.section }}</p>
+    <h3>{{ story.headline }}</h3>
+    <p>{{ story.dek }}</p>
+    {% if story.facts %}<ul class="story-facts">{% for fact in story.facts %}<li>{{ fact }}</li>{% endfor %}</ul>{% endif %}
+    {% set metric = edition.metrics[story.source] %}
+    {% if metric.categories %}
+    <div class="category-list">{% for category in metric.categories[:3] %}<div><span>{{ category.display_category }}</span><strong>{{ category.current }}</strong></div>{% endfor %}</div>
+    {% endif %}
+    <a class="source-link" href="{{ story.source_url }}" target="_blank" rel="noopener">DataSF source ↗</a>
+  </article>
+  {% endif %}
+{% endfor %}
+</section>
+
+<section class="section-rule"><h2>Eight-week pulse</h2><p>Weekly counts show whether this week's movement is isolated or part of a longer pattern.</p></section>
+<section class="pulse-grid">
+{% for key in ['businesses','permits','service_requests','police'] %}
+  {% set metric = edition.metrics.get(key) %}
+  {% if metric %}
+  <article class="pulse-card">
+    <div class="pulse-head"><span>{{ metric.short_label }}</span><strong>{{ metric.current }}</strong></div>
+    <div class="spark-bars" aria-label="Eight weekly counts">{% for bar in metric.history_bars %}<i style="height: {{ bar if bar > 7 else 7 }}%"></i>{% endfor %}</div>
+    <div class="pulse-foot"><span>8 weeks ago</span><span>latest</span></div>
+  </article>
+  {% endif %}
+{% endfor %}
+</section>
+
+{% if edition.notable.businesses or edition.notable.permits or edition.notable.service_requests %}
+<section class="section-rule"><h2>The Neighborhood Ledger</h2><p>Specific public records behind this week's numbers.</p></section>
+<section class="ledger-columns ledger-columns-rich">
+  <div>
+    <p class="section-label">New business locations</p>
+    {% for item in edition.notable.businesses[:6] %}
+    <article class="record-item"><h3>{{ item.title }}</h3><p>{{ item.address }}</p>{% if item.owner and item.owner != item.title %}<p class="muted">Registered owner: {{ item.owner }}</p>{% endif %}</article>
+    {% else %}<p class="muted">No new business-location records in the current source window.</p>{% endfor %}
+  </div>
+  <div>
+    <p class="section-label">Largest permit filings</p>
+    {% for item in edition.notable.permits[:5] %}
+    <article class="record-item">
+      <div class="record-heading"><h3>{{ item.address or item.title }}</h3>{% if item.cost %}<strong>${{ '{:,.0f}'.format(item.cost) }}</strong>{% endif %}</div>
+      <p>{{ item.title }}{% if item.status %} · {{ item.status }}{% endif %}</p>
+      {% if item.description %}<p class="muted">{{ item.description }}</p>{% endif %}
+    </article>
+    {% else %}<p class="muted">No permit records in the current source window.</p>{% endfor %}
+  </div>
+  <div>
+    <p class="section-label">Recent 311 requests</p>
+    {% for item in edition.notable.service_requests[:6] %}
+    <article class="record-item"><h3>{{ item.title }}</h3><p>{{ item.address or item.category }}</p>{% if item.description %}<p class="muted">{{ item.description }}</p>{% endif %}</article>
+    {% else %}<p class="muted">No recent 311 records available for this edition.</p>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="section-rule"><h2>How this neighborhood compares</h2><p>Ranked by latest seven-day record count across the Analysis Neighborhoods represented in the source.</p></section>
+<section class="comparison-grid">
+{% for key in ['businesses','permits','service_requests','police'] %}
+  {% set metric = edition.metrics.get(key) %}
+  {% if metric %}<div class="comparison-card"><span>{{ metric.short_label }}</span><strong>#{{ metric.city_rank }}</strong><small>of {{ metric.city_total_neighborhoods }} · city median {{ '%.0f'|format(metric.city_median) }}</small></div>{% endif %}
+{% endfor %}
+</section>
+
+<section class="methodology"><p class="section-label">Editor's note</p><p>Each dataset is anchored to its latest available date. The current count covers seven trailing days; the comparison is the average weekly count over the preceding 28 days. Routine high-volume 311 categories are deliberately downweighted in headline selection so they do not crowd out business, development and other neighborhood signals. A higher record count is not inherently good or bad. Police records represent reported incidents, not a measure of victimization or neighborhood safety.</p></section>
 {% endblock %}
