@@ -1,0 +1,25 @@
+{% if edition.editorial %}
+<section class="why-section" id="why">
+  <div class="why-layout">
+    <article class="why-panel">
+      <p class="section-label">THE WHY</p>
+      <h2>{{ edition.editorial.headline }}</h2>
+      <p>{{ edition.editorial.analysis }}</p>
+      <div class="watch-box"><strong>What to watch next</strong>{{ edition.editorial.watch }}</div>
+    </article>
+    <aside class="matched-coverage">
+      <p class="section-label">Recent reporting</p>
+      {% for article in edition.editorial.coverage %}
+      <a class="matched-article" href="{{ article.url }}" target="_blank" rel="noopener noreferrer">
+        <span>{{ article.publisher }}</span>
+        <strong>{{ article.title }}</strong>
+        {% if article.summary %}<small>{{ article.summary }}</small>{% endif %}
+        {% if article.match_reason %}<small><b>Why it matches:</b> {{ article.match_reason }}</small>{% endif %}
+      </a>
+      {% else %}
+      <p class="muted">No recent article cleared the neighborhood-match threshold. Use the Web Context searches above to explore broader coverage without forcing a weak editorial match.</p>
+      {% endfor %}
+    </aside>
+  </div>
+</section>
+{% endif %}
