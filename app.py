@@ -158,10 +158,7 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
             store.save(fresh)
             _snapshot = fresh
             _last_error = None if not source_errors else "One or more DataSF sources are temporarily unavailable"
-            print(
-                f"Bulletin refreshed ({reason}) at {generated_at.isoformat()} using {len(successful)} DataSF sources",
-                flush=True,
-            )
+            print(f"Bulletin refreshed ({reason}) at {generated_at.isoformat()} using {len(successful)} DataSF sources", flush=True)
             return fresh
         except Exception as exc:
             _last_error = f"{type(exc).__name__}: {exc}"
@@ -216,45 +213,41 @@ templates.env.filters["quote_plus"] = quote_plus
 async def health() -> JSONResponse:
     next_run = _next_scheduled_refresh or _next_refresh_time().isoformat()
     real_estate = (_snapshot or {}).get("real_estate") or {}
-    return JSONResponse(
-        {
-            "ok": True,
-            "version": APP_VERSION,
-            "has_snapshot": bool(_snapshot),
-            "generated_at": (_snapshot or {}).get("generated_at"),
-            "degraded": bool(_source_errors),
-            "source_errors": _source_errors,
-            "news_error": _news_error,
-            "restaurant_error": _restaurant_error,
-            "restaurant_reviews": len((_snapshot or {}).get("restaurant_reviews") or []),
-            "real_estate_error": _real_estate_error,
-            "real_estate_configured": bool(real_estate.get("configured")),
-            "last_error": _last_error,
-            "last_refresh_reason": _last_refresh_reason,
-            "refresh_schedule": {
-                "timezone": str(REFRESH_TZ),
-                "morning_hour": MORNING_REFRESH_HOUR,
-                "evening_hour": EVENING_REFRESH_HOUR,
-                "next_scheduled_refresh": next_run,
-            },
-        }
-    )
+    return JSONResponse({
+        "ok": True,
+        "version": APP_VERSION,
+        "has_snapshot": bool(_snapshot),
+        "generated_at": (_snapshot or {}).get("generated_at"),
+        "degraded": bool(_source_errors),
+        "source_errors": _source_errors,
+        "news_error": _news_error,
+        "restaurant_error": _restaurant_error,
+        "restaurant_reviews": len((_snapshot or {}).get("restaurant_reviews") or []),
+        "real_estate_error": _real_estate_error,
+        "real_estate_configured": bool(real_estate.get("configured")),
+        "last_error": _last_error,
+        "last_refresh_reason": _last_refresh_reason,
+        "refresh_schedule": {
+            "timezone": str(REFRESH_TZ),
+            "morning_hour": MORNING_REFRESH_HOUR,
+            "evening_hour": EVENING_REFRESH_HOUR,
+            "next_scheduled_refresh": next_run,
+        },
+    })
 
 
 @app.get("/api/refresh")
 async def manual_refresh() -> JSONResponse:
     fresh = await refresh_snapshot("manual")
-    return JSONResponse(
-        {
-            "ok": True,
-            "generated_at": fresh.get("generated_at"),
-            "degraded": bool(_source_errors),
-            "source_errors": _source_errors,
-            "news_error": _news_error,
-            "restaurant_error": _restaurant_error,
-            "real_estate_error": _real_estate_error,
-        }
-    )
+    return JSONResponse({
+        "ok": True,
+        "generated_at": fresh.get("generated_at"),
+        "degraded": bool(_source_errors),
+        "source_errors": _source_errors,
+        "news_error": _news_error,
+        "restaurant_error": _restaurant_error,
+        "real_estate_error": _real_estate_error,
+    })
 
 
 @app.get("/api/bulletin")
@@ -264,19 +257,21 @@ async def bulletin_api() -> JSONResponse:
     return JSONResponse(_snapshot)
 
 
-@app.get("/api/near-you")
-async def near_you_api(lat: float | None = None, lon: float | None = None, slug: str | None = None) -> JSONResponse:
+@app.post("/api/near-you")
+async def near_you_api(request: Request) -> JSONResponse:
     if not _snapshot:
         return JSONResponse({"status": "building", "message": "The first edition is being assembled."}, status_code=202)
     try:
+        body = await request.json()
+        slug = str(body.get("slug") or "").strip()
         if slug:
             edition = _snapshot.get("editions", {}).get(slug)
             if not edition:
                 raise HTTPException(status_code=404, detail="Neighborhood not found")
             payload = build_happenings(_snapshot, edition, "selected")
         else:
-            if lat is None or lon is None:
-                raise HTTPException(status_code=400, detail="Location is required")
+            lat = float(body.get("lat"))
+            lon = float(body.get("lon"))
             edition, mode, distance = await neighborhood_locator.locate(_snapshot, lat, lon)
             if mode == "nearest" and distance is not None and distance > 12:
                 raise HTTPException(status_code=422, detail="Happenings Near You currently covers San Francisco")
@@ -284,8 +279,8 @@ async def near_you_api(lat: float | None = None, lon: float | None = None, slug:
         return JSONResponse(payload)
     except HTTPException:
         raise
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (TypeError, ValueError, KeyError) as exc:
+        raise HTTPException(status_code=400, detail="A valid location or neighborhood is required") from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Unable to resolve your neighborhood right now") from exc
 
