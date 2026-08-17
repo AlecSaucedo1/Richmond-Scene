@@ -20,6 +20,8 @@ NEWS_QUERIES = {
     "police": '"San Francisco" crime police neighborhood when:14d',
 }
 
+RESTAURANT_REVIEW_QUERY = '"San Francisco" restaurant review critic dining when:30d'
+
 
 class NewsContextClient:
     def __init__(self) -> None:
@@ -88,3 +90,18 @@ class NewsContextClient:
             if not existing or (existing.get("live") and not item.get("live")):
                 deduped[key] = item
         return sorted(deduped.values(), key=lambda x: x.get("published", ""), reverse=True)
+
+    async def fetch_restaurant_reviews(self) -> list[dict]:
+        items = await self._feed("restaurant_reviews", RESTAURANT_REVIEW_QUERY)
+        review_terms = re.compile(r"\b(review|critic|restaurant|dining|chef|menu|food)\b", re.I)
+        filtered = [
+            item
+            for item in items
+            if review_terms.search((item.get("title") or "") + " " + (item.get("summary") or ""))
+        ]
+        deduped: dict[str, dict] = {}
+        for item in filtered:
+            key = re.sub(r"\W+", " ", item.get("title", "").lower()).strip()
+            if key and key not in deduped:
+                deduped[key] = item
+        return sorted(deduped.values(), key=lambda x: x.get("published", ""), reverse=True)[:20]
