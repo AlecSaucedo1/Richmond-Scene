@@ -8,17 +8,25 @@
 <section class="front-grid">
   {% set lead = snapshot.front_page[0] if snapshot.front_page else None %}
   {% if lead %}
-  <article class="front-lead">
+  <article class="front-lead interactive-post" data-href="/neighborhood/{{ lead.slug }}#story-{{ lead.source }}">
     <a class="eyebrow" href="/neighborhood/{{ lead.slug }}">{{ lead.name }} · {{ lead.section }}</a>
-    <h1><a href="/neighborhood/{{ lead.slug }}">{{ lead.headline }}</a></h1>
+    <h1><a href="/neighborhood/{{ lead.slug }}#story-{{ lead.source }}">{{ lead.headline }}</a></h1>
     <p class="lead-dek">{{ lead.dek }}</p>
     {% if lead.facts %}<ul class="fact-list compact">{% for fact in lead.facts[:2] %}<li>{{ fact }}</li>{% endfor %}</ul>{% endif %}
-    <a class="read-more" href="/neighborhood/{{ lead.slug }}">Read the {{ lead.name }} edition →</a>
+    <div class="story-actions">
+      <a class="action-link primary" href="/neighborhood/{{ lead.slug }}#story-{{ lead.source }}">Read story <span aria-hidden="true">→</span></a>
+      <button type="button" class="action-link js-share" data-share-title="{{ lead.headline }}" data-share-url="/neighborhood/{{ lead.slug }}#story-{{ lead.source }}">Share</button>
+    </div>
   </article>
   {% endif %}
   <aside class="front-sidebar"><p class="section-label">Across the city</p>
     {% for story in snapshot.front_page[1:5] %}
-    <article class="brief"><a class="brief-neighborhood" href="/neighborhood/{{ story.slug }}">{{ story.name }} · {{ story.section }}</a><h2><a href="/neighborhood/{{ story.slug }}">{{ story.headline }}</a></h2><p>{{ story.dek }}</p></article>
+    <article class="brief interactive-post compact-post" data-href="/neighborhood/{{ story.slug }}#story-{{ story.source }}">
+      <a class="brief-neighborhood" href="/neighborhood/{{ story.slug }}">{{ story.name }} · {{ story.section }}</a>
+      <h2><a href="/neighborhood/{{ story.slug }}#story-{{ story.source }}">{{ story.headline }}</a></h2>
+      <p>{{ story.dek }}</p>
+      <span class="post-cue">Open story <span aria-hidden="true">→</span></span>
+    </article>
     {% endfor %}
   </aside>
 </section>
@@ -26,24 +34,47 @@
 <section class="section-rule"><h2>City Desk</h2><p>A deliberately mixed front page: business, development, civic services and public safety.</p></section>
 <section class="city-desk-grid">
   {% for story in snapshot.front_page[5:9] %}
-  <article class="desk-card"><p class="section-label">{{ story.name }} · {{ story.section }}</p><h3><a href="/neighborhood/{{ story.slug }}">{{ story.headline }}</a></h3><p>{{ story.dek }}</p></article>
+  <article class="desk-card interactive-post" data-href="/neighborhood/{{ story.slug }}#story-{{ story.source }}">
+    <p class="section-label">{{ story.name }} · {{ story.section }}</p>
+    <h3><a href="/neighborhood/{{ story.slug }}#story-{{ story.source }}">{{ story.headline }}</a></h3>
+    <p>{{ story.dek }}</p>
+    {% if story.facts %}
+    <details class="inline-details"><summary>Key facts</summary><ul class="story-facts">{% for fact in story.facts[:3] %}<li>{{ fact }}</li>{% endfor %}</ul></details>
+    {% endif %}
+    <span class="post-cue">Read {{ story.name }} <span aria-hidden="true">→</span></span>
+  </article>
   {% endfor %}
 </section>
 
-<section class="section-rule"><h2>Neighborhood Desk</h2><p>Forty-one editions, each benchmarked against its own recent history.</p></section>
-<section class="edition-grid">
+<section class="section-rule"><h2>Neighborhood Desk</h2><p>Find an edition or filter by the beat leading this week's neighborhood coverage.</p></section>
+<section class="explore-toolbar" aria-label="Explore neighborhood editions">
+  <label class="search-field"><span>Find a neighborhood</span><input type="search" data-neighborhood-search placeholder="Mission, Richmond, Noe Valley…" autocomplete="off"></label>
+  <div class="filter-block">
+    <span class="filter-label">Lead beat</span>
+    <div class="filter-chips" role="group" aria-label="Filter neighborhoods by lead beat">
+      <button type="button" class="filter-chip is-active" data-edition-filter="all">All</button>
+      <button type="button" class="filter-chip" data-edition-filter="businesses">Business</button>
+      <button type="button" class="filter-chip" data-edition-filter="permits">Development</button>
+      <button type="button" class="filter-chip" data-edition-filter="service_requests">City services</button>
+      <button type="button" class="filter-chip" data-edition-filter="police">Public safety</button>
+    </div>
+  </div>
+  <span class="filter-count" data-edition-count aria-live="polite"></span>
+</section>
+<section class="edition-grid" data-edition-grid>
 {% for n in snapshot.neighborhoods %}
   {% set e = snapshot.editions[n.slug] %}
   {% if e.lead %}
-  <article class="edition-card">
+  <article class="edition-card interactive-post" data-edition-card data-source="{{ e.lead.source }}" data-search="{{ (n.name ~ ' ' ~ e.lead.headline ~ ' ' ~ e.lead.section)|lower }}" data-href="/neighborhood/{{ n.slug }}">
     <a class="eyebrow" href="/neighborhood/{{ n.slug }}">{{ n.name }} · {{ e.lead.section }}</a>
-    <h3><a href="/neighborhood/{{ n.slug }}">{{ e.lead.headline }}</a></h3>
+    <h3><a href="/neighborhood/{{ n.slug }}#story-{{ e.lead.source }}">{{ e.lead.headline }}</a></h3>
     <p>{{ e.lead.dek }}</p>
     <div class="mini-ledger">
       {% for key in ['businesses','permits','service_requests','police'] %}
         {% if e.metrics.get(key) %}<span><strong>{{ e.metrics[key].current }}</strong> {{ e.metrics[key].short_label }}</span>{% endif %}
       {% endfor %}
     </div>
+    <div class="edition-card-foot"><span>Open edition</span><span aria-hidden="true">→</span></div>
   </article>
   {% endif %}
 {% endfor %}
