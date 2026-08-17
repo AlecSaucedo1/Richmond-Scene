@@ -10,12 +10,12 @@
   <link rel="stylesheet" href="/static/interactive.css?v={{ version }}">
   <link rel="stylesheet" href="/static/web-context.css?v={{ version }}">
   <link rel="stylesheet" href="/static/editorial.css?v={{ version }}">
-  <link rel="stylesheet" href="/static/realestate.css?v={{ version }}">
+  <link rel="stylesheet" href="/static/realestate.css?v={{ version }}-free1">
   <link rel="stylesheet" href="/static/nearby.css?v={{ version }}">
   <script src="/static/app.js?v={{ version }}" defer></script>
   <script src="/static/editorial.js?v={{ version }}" defer></script>
   <script src="/static/cityhall.js?v={{ version }}" defer></script>
-  <script src="/static/realestate.js?v={{ version }}" defer></script>
+  <script src="/static/realestate.js?v={{ version }}-free1" defer></script>
   <script src="/static/nearby.js?v={{ version }}" defer></script>
 </head>
 <body>
@@ -27,6 +27,6 @@
     {% endif %}
   </header>
   <main>{% block content %}{% endblock %}</main>
-  <footer class="site-footer"><strong>The San Francisco Bulletin</strong><p>Automated neighborhood reporting from official DataSF records, recent independent reporting and recorder-backed property-sale data when available. Counts and sales records are descriptive; news matches and political-statement checks include scope and timeframe caveats.</p><p>v{{ version }}</p></footer>
+  <footer class="site-footer"><strong>The San Francisco Bulletin</strong><p>Automated neighborhood reporting from official DataSF records, recent independent reporting, public transaction listings and sourced commercial-sale reporting. Counts and sales records are descriptive; news matches and political-statement checks include scope and timeframe caveats.</p><p>v{{ version }}</p></footer>
 </body>
 </html>
