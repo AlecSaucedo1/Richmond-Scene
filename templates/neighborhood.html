@@ -8,7 +8,7 @@
 </section>
 
 {% if edition.lead %}
-<section class="neighborhood-front">
+<section class="neighborhood-front" id="story-{{ edition.lead.source }}">
   <article class="lead-story">
     <p class="section-label">{{ edition.lead.section }}</p>
     <h2>{{ edition.lead.headline }}</h2>
@@ -16,20 +16,23 @@
     {% if edition.lead.facts %}
     <ul class="fact-list">{% for fact in edition.lead.facts %}<li>{{ fact }}</li>{% endfor %}</ul>
     {% endif %}
-    <a class="source-link" href="{{ edition.lead.source_url }}" target="_blank" rel="noopener">View source dataset ↗</a>
+    <div class="story-actions">
+      <a class="action-link primary" href="{{ edition.lead.source_url }}" target="_blank" rel="noopener">Open DataSF source <span aria-hidden="true">↗</span></a>
+      <button type="button" class="action-link js-share" data-share-title="{{ edition.lead.headline }}" data-share-url="/neighborhood/{{ edition.slug }}#story-{{ edition.lead.source }}">Share story</button>
+    </div>
   </article>
   <aside class="ledger">
     <p class="section-label">By the numbers</p>
     {% for key in ['businesses','permits','service_requests','police'] %}
       {% set metric = edition.metrics.get(key) %}
       {% if metric %}
-      <div class="ledger-row">
+      <a class="ledger-row interactive-ledger-row" href="#story-{{ key }}">
         <div><strong>{{ metric.current }}</strong><span>{{ metric.short_label }}</span></div>
         <div class="change {% if metric.pct_change and metric.pct_change > 0 %}up{% elif metric.pct_change and metric.pct_change < 0 %}down{% endif %}">{% if metric.pct_change is not none %}{{ '%+.0f'|format(metric.pct_change) }}%{% else %}—{% endif %}</div>
-      </div>
+      </a>
       {% endif %}
     {% endfor %}
-    <p class="ledger-note">Change vs. the average weekly count during the previous four weeks. Each source uses its own latest available date.</p>
+    <p class="ledger-note">Change vs. the average weekly count during the previous four weeks. Select a row to jump to that beat.</p>
   </aside>
 </section>
 {% endif %}
@@ -38,72 +41,102 @@
 <section class="quick-read">
   <p class="section-label">The quick read</p>
   <div class="quick-read-grid">
-    {% for item in edition.quick_read %}<div><span>{{ item.label }}</span><strong>{{ item.text }}</strong></div>{% endfor %}
+    {% for item in edition.quick_read %}
+      {% if item.label == 'Business' %}{% set quick_anchor = 'businesses' %}
+      {% elif item.label == 'Development' %}{% set quick_anchor = 'permits' %}
+      {% elif item.label == 'City services' %}{% set quick_anchor = 'service_requests' %}
+      {% elif item.label == 'Public safety' %}{% set quick_anchor = 'police' %}
+      {% else %}{% set quick_anchor = '' %}{% endif %}
+      {% if quick_anchor %}<a class="quick-read-item" href="#story-{{ quick_anchor }}"><span>{{ item.label }}</span><strong>{{ item.text }}</strong><em aria-hidden="true">→</em></a>{% else %}<div><span>{{ item.label }}</span><strong>{{ item.text }}</strong></div>{% endif %}
+    {% endfor %}
   </div>
 </section>
 {% endif %}
 
-<section class="section-rule"><h2>Around {{ edition.name }}</h2><p>Stories are selected for specificity, scale and change from the neighborhood's recent baseline.</p></section>
-<section class="story-columns">
+<section class="section-rule"><h2>Around {{ edition.name }}</h2><p>Filter the neighborhood desk by beat, then expand a story for the evidence behind it.</p></section>
+<section class="story-toolbar" aria-label="Filter neighborhood stories">
+  <div class="filter-chips" role="group" aria-label="Filter stories by beat">
+    <button type="button" class="filter-chip is-active" data-story-filter="all">All</button>
+    <button type="button" class="filter-chip" data-story-filter="businesses">Business</button>
+    <button type="button" class="filter-chip" data-story-filter="permits">Development</button>
+    <button type="button" class="filter-chip" data-story-filter="service_requests">City services</button>
+    <button type="button" class="filter-chip" data-story-filter="police">Public safety</button>
+  </div>
+  <span class="filter-count" data-story-count aria-live="polite"></span>
+</section>
+<section class="story-columns" data-story-grid>
 {% for story in edition.stories %}
   {% if not edition.lead or story.source != edition.lead.source %}
-  <article class="story-card">
+  <article class="story-card interactive-story-card" id="story-{{ story.source }}" data-story-card data-source="{{ story.source }}">
     <p class="section-label">{{ story.section }}</p>
     <h3>{{ story.headline }}</h3>
     <p>{{ story.dek }}</p>
-    {% if story.facts %}<ul class="story-facts">{% for fact in story.facts %}<li>{{ fact }}</li>{% endfor %}</ul>{% endif %}
     {% set metric = edition.metrics[story.source] %}
-    {% if metric.categories %}
-    <div class="category-list">{% for category in metric.categories[:3] %}<div><span>{{ category.display_category }}</span><strong>{{ category.current }}</strong></div>{% endfor %}</div>
-    {% endif %}
-    <a class="source-link" href="{{ story.source_url }}" target="_blank" rel="noopener">DataSF source ↗</a>
+    <details class="story-details">
+      <summary>Explore the evidence</summary>
+      {% if story.facts %}<ul class="story-facts">{% for fact in story.facts %}<li>{{ fact }}</li>{% endfor %}</ul>{% endif %}
+      {% if metric.categories %}
+      <div class="category-list">{% for category in metric.categories[:4] %}<div><span>{{ category.display_category }}</span><strong>{{ category.current }}</strong></div>{% endfor %}</div>
+      {% endif %}
+    </details>
+    <div class="story-actions compact-actions">
+      <a class="action-link" href="{{ story.source_url }}" target="_blank" rel="noopener">DataSF source <span aria-hidden="true">↗</span></a>
+      <button type="button" class="action-link js-share" data-share-title="{{ story.headline }}" data-share-url="/neighborhood/{{ edition.slug }}#story-{{ story.source }}">Share</button>
+    </div>
   </article>
   {% endif %}
 {% endfor %}
 </section>
 
-<section class="section-rule"><h2>Eight-week pulse</h2><p>Weekly counts show whether this week's movement is isolated or part of a longer pattern.</p></section>
+<section class="section-rule"><h2>Eight-week pulse</h2><p>Select a week to see the exact record count behind each bar.</p></section>
 <section class="pulse-grid">
 {% for key in ['businesses','permits','service_requests','police'] %}
   {% set metric = edition.metrics.get(key) %}
   {% if metric %}
-  <article class="pulse-card">
+  <article class="pulse-card" id="pulse-{{ key }}">
     <div class="pulse-head"><span>{{ metric.short_label }}</span><strong>{{ metric.current }}</strong></div>
-    <div class="spark-bars" aria-label="Eight weekly counts">{% for bar in metric.history_bars %}<i style="height: {{ bar if bar > 7 else 7 }}%"></i>{% endfor %}</div>
+    <div class="spark-bars interactive-bars" aria-label="Eight weekly counts for {{ metric.short_label }}">
+      {% for bar in metric.history_bars %}<button type="button" class="pulse-bar{% if loop.last %} is-selected{% endif %}" style="--bar: {{ bar if bar > 7 else 7 }}%" data-week="{{ loop.index }}" data-value="{{ metric.weekly_history[loop.index0] }}" aria-label="Week {{ loop.index }}: {{ metric.weekly_history[loop.index0] }} records"></button>{% endfor %}
+    </div>
     <div class="pulse-foot"><span>8 weeks ago</span><span>latest</span></div>
+    <p class="pulse-readout" aria-live="polite">Latest week: {{ metric.current }} record{% if metric.current != 1 %}s{% endif %}</p>
   </article>
   {% endif %}
 {% endfor %}
 </section>
 
-{% if edition.notable.businesses or edition.notable.permits or edition.notable.service_requests %}
-<section class="section-rule"><h2>The Neighborhood Ledger</h2><p>Specific public records behind this week's numbers.</p></section>
+{% set business_records = edition.notable.get('businesses', []) %}
+{% set permit_records = edition.notable.get('permits', []) %}
+{% set service_records = edition.notable.get('service_requests', []) %}
+{% if business_records or permit_records or service_records %}
+<section class="section-rule"><h2>The Neighborhood Ledger</h2><p>Open individual records for more detail, or expand each column to see additional filings.</p></section>
 <section class="ledger-columns ledger-columns-rich">
   <div>
     <p class="section-label">New business locations</p>
-    {% for item in edition.notable.businesses[:6] %}
-    <article class="record-item"><h3>{{ item.title }}</h3><p>{{ item.address }}</p>{% if item.owner and item.owner != item.title %}<p class="muted">Registered owner: {{ item.owner }}</p>{% endif %}</article>
+    {% for item in business_records[:3] %}
+    <article class="record-item record-card"><h3>{{ item.title }}</h3><p>{{ item.address }}</p>{% if item.owner and item.owner != item.title %}<p class="muted">Registered owner: {{ item.owner }}</p>{% endif %}</article>
     {% else %}<p class="muted">No new business-location records in the current source window.</p>{% endfor %}
+    {% if business_records|length > 3 %}<div id="business-more" hidden>{% for item in business_records[3:] %}<article class="record-item record-card"><h3>{{ item.title }}</h3><p>{{ item.address }}</p>{% if item.owner and item.owner != item.title %}<p class="muted">Registered owner: {{ item.owner }}</p>{% endif %}</article>{% endfor %}</div><button type="button" class="show-more" data-expand-group="business-more" aria-expanded="false" data-more-label="Show {{ business_records|length - 3 }} more" data-less-label="Show fewer">Show {{ business_records|length - 3 }} more</button>{% endif %}
   </div>
   <div>
     <p class="section-label">Development & housing filings</p>
-    {% for item in edition.notable.permits[:5] %}
-    <article class="record-item">
-      <div class="record-heading"><h3>{{ item.address or item.title }}</h3>{% if item.cost %}<strong>${{ '{:,.0f}'.format(item.cost) }}</strong>{% endif %}</div>
-      <p>{{ item.title }}{% if item.status %} · {{ item.status }}{% endif %}</p>
-      {% if item.unit_delta is not none and item.existing_units is not none and item.proposed_units is not none and item.unit_delta != 0 %}
-      <p class="housing-change"><strong>{{ item.existing_units }} → {{ item.proposed_units }} units</strong> · {% if item.unit_delta > 0 %}+{{ item.unit_delta }} proposed{% else %}{{ item.unit_delta }} proposed{% endif %}</p>
-      {% endif %}
+    {% for item in permit_records[:3] %}
+    <details class="record-item record-details">
+      <summary><span><strong>{{ item.address or item.title }}</strong><small>{{ item.title }}{% if item.status %} · {{ item.status }}{% endif %}</small></span>{% if item.cost %}<b>${{ '{:,.0f}'.format(item.cost) }}</b>{% endif %}</summary>
+      {% if item.unit_delta is not none and item.existing_units is not none and item.proposed_units is not none and item.unit_delta != 0 %}<p class="housing-change"><strong>{{ item.existing_units }} → {{ item.proposed_units }} units</strong> · {% if item.unit_delta > 0 %}+{{ item.unit_delta }} proposed{% else %}{{ item.unit_delta }} proposed{% endif %}</p>{% endif %}
       {% if item.proposed_use and item.proposed_use != item.existing_use %}<p class="muted">Use: {{ item.existing_use or 'not listed' }} → {{ item.proposed_use }}</p>{% endif %}
       {% if item.description %}<p class="muted">{{ item.description }}</p>{% endif %}
-    </article>
+      {% if item.permit_number %}<p class="record-id">Permit {{ item.permit_number }}</p>{% endif %}
+    </details>
     {% else %}<p class="muted">No permit records in the current source window.</p>{% endfor %}
+    {% if permit_records|length > 3 %}<div id="permit-more" hidden>{% for item in permit_records[3:] %}<details class="record-item record-details"><summary><span><strong>{{ item.address or item.title }}</strong><small>{{ item.title }}{% if item.status %} · {{ item.status }}{% endif %}</small></span>{% if item.cost %}<b>${{ '{:,.0f}'.format(item.cost) }}</b>{% endif %}</summary>{% if item.unit_delta is not none and item.existing_units is not none and item.proposed_units is not none and item.unit_delta != 0 %}<p class="housing-change"><strong>{{ item.existing_units }} → {{ item.proposed_units }} units</strong> · {% if item.unit_delta > 0 %}+{{ item.unit_delta }} proposed{% else %}{{ item.unit_delta }} proposed{% endif %}</p>{% endif %}{% if item.proposed_use and item.proposed_use != item.existing_use %}<p class="muted">Use: {{ item.existing_use or 'not listed' }} → {{ item.proposed_use }}</p>{% endif %}{% if item.description %}<p class="muted">{{ item.description }}</p>{% endif %}</details>{% endfor %}</div><button type="button" class="show-more" data-expand-group="permit-more" aria-expanded="false" data-more-label="Show {{ permit_records|length - 3 }} more" data-less-label="Show fewer">Show {{ permit_records|length - 3 }} more</button>{% endif %}
   </div>
   <div>
     <p class="section-label">Recent 311 requests</p>
-    {% for item in edition.notable.service_requests[:6] %}
-    <article class="record-item"><h3>{{ item.title }}</h3><p>{{ item.address or item.category }}</p>{% if item.description %}<p class="muted">{{ item.description }}</p>{% endif %}</article>
+    {% for item in service_records[:3] %}
+    <details class="record-item record-details"><summary><span><strong>{{ item.title }}</strong><small>{{ item.address or item.category }}</small></span></summary>{% if item.description %}<p class="muted">{{ item.description }}</p>{% endif %}{% if item.status %}<p class="record-id">Status: {{ item.status }}</p>{% endif %}</details>
     {% else %}<p class="muted">No recent 311 records available for this edition.</p>{% endfor %}
+    {% if service_records|length > 3 %}<div id="service-more" hidden>{% for item in service_records[3:] %}<details class="record-item record-details"><summary><span><strong>{{ item.title }}</strong><small>{{ item.address or item.category }}</small></span></summary>{% if item.description %}<p class="muted">{{ item.description }}</p>{% endif %}{% if item.status %}<p class="record-id">Status: {{ item.status }}</p>{% endif %}</details>{% endfor %}</div><button type="button" class="show-more" data-expand-group="service-more" aria-expanded="false" data-more-label="Show {{ service_records|length - 3 }} more" data-less-label="Show fewer">Show {{ service_records|length - 3 }} more</button>{% endif %}
   </div>
 </section>
 {% endif %}
@@ -112,7 +145,7 @@
 <section class="comparison-grid">
 {% for key in ['businesses','permits','service_requests','police'] %}
   {% set metric = edition.metrics.get(key) %}
-  {% if metric %}<div class="comparison-card"><span>{{ metric.short_label }}</span><strong>#{{ metric.city_rank }}</strong><small>of {{ metric.city_total_neighborhoods }} · city median {{ '%.0f'|format(metric.city_median) }}</small></div>{% endif %}
+  {% if metric %}<a class="comparison-card interactive-comparison" href="#pulse-{{ key }}"><span>{{ metric.short_label }}</span><strong>#{{ metric.city_rank }}</strong><small>of {{ metric.city_total_neighborhoods }} · city median {{ '%.0f'|format(metric.city_median) }}</small><em>View eight-week pulse →</em></a>{% endif %}
 {% endfor %}
 </section>
 
