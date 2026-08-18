@@ -10,6 +10,7 @@ from xml.etree import ElementTree
 
 import httpx
 
+from .config import ANALYSIS_NEIGHBORHOODS
 from .curated_news import CURATED_NEWS
 
 
@@ -32,11 +33,68 @@ NEWS_QUERY_GROUPS = {
     ],
 }
 
-RESTAURANT_REVIEW_QUERY = '"San Francisco" restaurant review critic dining when:30d'
+# Restaurant reviews are intentionally stricter than general news matching. A review
+# only appears in Happenings Near You when the Google News title/summary explicitly
+# contains a controlled name for that Analysis Neighborhood. Search targeting alone
+# is not accepted as proof that the restaurant is in the neighborhood.
+RESTAURANT_NEIGHBORHOOD_TERMS: dict[str, tuple[str, ...]] = {
+    "Bayview Hunters Point": ("Bayview Hunters Point", "Bayview", "Hunters Point"),
+    "Bernal Heights": ("Bernal Heights",),
+    "Castro/Upper Market": ("Castro", "Upper Market"),
+    "Chinatown": ("Chinatown",),
+    "Excelsior": ("Excelsior",),
+    "Financial District/South Beach": ("Financial District", "South Beach"),
+    "Glen Park": ("Glen Park",),
+    "Golden Gate Park": ("Golden Gate Park",),
+    "Haight Ashbury": ("Haight Ashbury", "Haight-Ashbury", "the Haight"),
+    "Hayes Valley": ("Hayes Valley",),
+    "Inner Richmond": ("Inner Richmond",),
+    "Inner Sunset": ("Inner Sunset",),
+    "Japantown": ("Japantown",),
+    "Lakeshore": ("Lakeshore",),
+    "Lincoln Park": ("Lincoln Park",),
+    "Lone Mountain/USF": ("Lone Mountain",),
+    "Marina": ("Marina District",),
+    "McLaren Park": ("McLaren Park",),
+    "Mission": ("Mission District", "the Mission"),
+    "Mission Bay": ("Mission Bay",),
+    "Nob Hill": ("Nob Hill",),
+    "Noe Valley": ("Noe Valley",),
+    "North Beach": ("North Beach",),
+    "Oceanview/Merced/Ingleside": ("Oceanview", "Ingleside"),
+    "Outer Mission": ("Outer Mission",),
+    "Outer Richmond": ("Outer Richmond",),
+    "Pacific Heights": ("Pacific Heights",),
+    "Portola": ("Portola",),
+    "Potrero Hill": ("Potrero Hill", "Dogpatch"),
+    "Presidio": ("Presidio",),
+    "Presidio Heights": ("Presidio Heights",),
+    "Russian Hill": ("Russian Hill",),
+    "Seacliff": ("Sea Cliff", "Seacliff"),
+    "South of Market": ("South of Market", "SoMa"),
+    "Sunset/Parkside": ("Parkside", "Outer Sunset"),
+    "Tenderloin": ("Tenderloin",),
+    "Treasure Island": ("Treasure Island",),
+    "Twin Peaks": ("Twin Peaks",),
+    "Visitacion Valley": ("Visitacion Valley",),
+    "West of Twin Peaks": ("West of Twin Peaks",),
+    "Western Addition": ("Western Addition", "Fillmore"),
+}
+
+RESTAURANT_REVIEW_LANGUAGE = re.compile(
+    r"\b(review|reviewed|critic|restaurant critic|food critic|dining review|restaurant review|rated|rating)\b",
+    re.I,
+)
+RESTAURANT_LANGUAGE = re.compile(r"\b(restaurant|dining|chef|menu|food|cafe|bistro|bar)\b", re.I)
 
 
 def _norm(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def _contains_phrase(body: str, phrase: str) -> bool:
+    normalized = _norm(phrase)
+    return bool(normalized) and f" {normalized} " in f" {body} "
 
 
 def _article_key(item: dict) -> str:
@@ -145,6 +203,30 @@ def _targeted_searches(snapshot: dict | None, limit: int = 12) -> list[tuple[str
     return selected
 
 
+def _restaurant_query(neighborhood: str) -> str:
+    terms = RESTAURANT_NEIGHBORHOOD_TERMS.get(neighborhood) or (neighborhood,)
+    # Use the least ambiguous preferred label as the search anchor. Validation below
+    # still requires one of the controlled terms to occur in the result itself.
+    anchor = terms[0]
+    return f'"{anchor}" "San Francisco" restaurant review critic dining when:90d'
+
+
+def _verified_review_neighborhoods(item: dict, target: str | None = None) -> tuple[list[str], dict[str, str]]:
+    body = _norm((item.get("title") or "") + " " + (item.get("summary") or ""))
+    candidates = [target] if target else list(ANALYSIS_NEIGHBORHOODS)
+    verified: list[str] = []
+    evidence: dict[str, str] = {}
+    for neighborhood in candidates:
+        if not neighborhood:
+            continue
+        terms = RESTAURANT_NEIGHBORHOOD_TERMS.get(neighborhood) or (neighborhood,)
+        hit = next((term for term in terms if _contains_phrase(body, term)), None)
+        if hit:
+            verified.append(neighborhood)
+            evidence[neighborhood] = hit
+    return verified, evidence
+
+
 class NewsContextClient:
     def __init__(self) -> None:
         self.timeout = 12.0
@@ -156,7 +238,7 @@ class NewsContextClient:
             + quote_plus(query)
             + "&hl=en-US&gl=US&ceid=US:en"
         )
-        headers = {"User-Agent": "sf-neighborhood-bulletin/1.0"}
+        headers = {"User-Agent": "sf-neighborhood-bulletin/1.1"}
         async with self._semaphore:
             async with httpx.AsyncClient(timeout=self.timeout, headers=headers, follow_redirects=True) as client:
                 response = await client.get(url)
@@ -233,16 +315,42 @@ class NewsContextClient:
         return sorted(deduped.values(), key=lambda x: x.get("published", ""), reverse=True)
 
     async def fetch_restaurant_reviews(self) -> list[dict]:
-        items = await self._feed("restaurant_reviews", RESTAURANT_REVIEW_QUERY)
-        review_terms = re.compile(r"\b(review|critic|restaurant|dining|chef|menu|food)\b", re.I)
-        filtered = [
-            item
-            for item in items
-            if review_terms.search((item.get("title") or "") + " " + (item.get("summary") or ""))
-        ]
+        jobs = [(neighborhood, _restaurant_query(neighborhood)) for neighborhood in ANALYSIS_NEIGHBORHOODS]
+        fetched = await asyncio.gather(
+            *(self._feed("restaurant_reviews", query, neighborhood) for neighborhood, query in jobs),
+            return_exceptions=True,
+        )
+
         deduped: dict[str, dict] = {}
-        for item in filtered:
-            key = _article_key(item)
-            if key and key not in deduped:
-                deduped[key] = item
-        return sorted(deduped.values(), key=lambda x: x.get("published", ""), reverse=True)[:20]
+        for (neighborhood, _), result in zip(jobs, fetched):
+            if isinstance(result, BaseException):
+                continue
+            for item in result:
+                text = (item.get("title") or "") + " " + (item.get("summary") or "")
+                if not RESTAURANT_LANGUAGE.search(text) or not RESTAURANT_REVIEW_LANGUAGE.search(text):
+                    continue
+                verified, evidence = _verified_review_neighborhoods(item, neighborhood)
+                if neighborhood not in verified:
+                    # A targeted search hit is not sufficient evidence. This is the rule
+                    # that prevents a Santa Clara review from filling the Sea Cliff card.
+                    continue
+                item = {
+                    **item,
+                    "verified_neighborhoods": verified,
+                    "neighborhood_evidence": evidence,
+                    "review_verified": True,
+                }
+                key = _article_key(item)
+                if not key:
+                    continue
+                existing = deduped.get(key)
+                if not existing:
+                    deduped[key] = item
+                    continue
+                neighborhoods = set(existing.get("verified_neighborhoods") or []) | set(verified)
+                merged_evidence = dict(existing.get("neighborhood_evidence") or {})
+                merged_evidence.update(evidence)
+                existing["verified_neighborhoods"] = sorted(neighborhoods)
+                existing["neighborhood_evidence"] = merged_evidence
+
+        return sorted(deduped.values(), key=lambda x: x.get("published", ""), reverse=True)[:80]
