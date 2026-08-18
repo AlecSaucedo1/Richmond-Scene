@@ -4,14 +4,11 @@ import asyncio
 import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from .config import ANALYSIS_NEIGHBORHOODS
 
 
-# Analysis Neighborhood names do not always match the names local reporters use.
-# These aliases stay neighborhood-specific enough to avoid turning a citywide search
-# into a geographic guess, while improving recall for common local names.
 NEIGHBORHOOD_TERMS: dict[str, tuple[str, ...]] = {
     "Bayview Hunters Point": ("Bayview Hunters Point", "Bayview", "Hunters Point", "India Basin"),
     "Bernal Heights": ("Bernal Heights",),
@@ -134,8 +131,6 @@ def _explicit_neighborhoods(body: str) -> set[str]:
         terms = NEIGHBORHOOD_TERMS.get(neighborhood) or (neighborhood,)
         if any(_contains(body, term) for term in terms):
             hits.add(neighborhood)
-    # The shorter words Mission and Presidio must not steal articles that clearly
-    # identify Mission Bay or Presidio Heights.
     if "Mission Bay" in hits:
         hits.discard("Mission")
     if "Presidio Heights" in hits:
@@ -148,16 +143,18 @@ def location_confidence(item: dict, target: str) -> tuple[str | None, int, str]:
     if not body:
         return None, 0, ""
 
-    other_city = next((place for place in OUTSIDE_SF_PLACES if _contains(body, place)), None)
-    if other_city and not _contains(body, "San Francisco"):
-        return None, 0, ""
-
     explicit = _explicit_neighborhoods(body)
     if target in explicit:
         terms = NEIGHBORHOOD_TERMS.get(target) or (target,)
         evidence = next((term for term in terms if _contains(body, term)), target)
         return "explicit", 42, evidence
     if explicit and target not in explicit:
+        return None, 0, ""
+
+    # Another Bay Area city is disqualifying for a fallback match. This intentionally
+    # stays stricter than a generic "San Francisco" mention so a Bay Area roundup or
+    # publisher name cannot assign a Santa Clara/Oakland story to an SF neighborhood.
+    if any(_contains(body, place) for place in OUTSIDE_SF_PLACES):
         return None, 0, ""
 
     targeted = target in (item.get("target_neighborhoods") or []) or target == item.get("local_search_target")
@@ -236,7 +233,6 @@ def merge_news(base_items: list[dict], neighborhood_items: list[dict]) -> list[d
             values.update(item.get(field) or {})
             if values:
                 existing[field] = values
-        # Prefer richer summaries while preserving the original article URL/publisher.
         if len(str(item.get("summary") or "")) > len(str(existing.get("summary") or "")):
             existing["summary"] = item.get("summary")
     return sorted(merged.values(), key=lambda item: item.get("published", ""), reverse=True)
@@ -272,8 +268,6 @@ def rank_neighborhood_articles(items: list[dict], neighborhood: str, now: dateti
         score = float(location_score + publisher_score(item)) + _recency_score(age_days)
         if SIGNIFICANCE_TERMS.search(text):
             score += 7
-        # Dining has its own section; keep it eligible but prefer broader neighborhood
-        # reporting for the general news module when other stories exist.
         if RESTAURANT_TERMS.search(text):
             score -= 5
         if confidence == "explicit" and any(
@@ -304,8 +298,6 @@ def backfill_neighborhood_coverage(snapshot: dict, items: list[dict], now: datet
             if key:
                 usage[key] += 1
 
-    # Fill the strongest existing gaps first, but every edition gets the same chance
-    # at local context. A fallback article is globally unique whenever possible.
     editions = list(snapshot.get("editions", {}).values())
     editions.sort(key=lambda edition: len((edition.get("editorial") or {}).get("coverage", [])))
     added = 0
@@ -328,8 +320,6 @@ def backfill_neighborhood_coverage(snapshot: dict, items: list[dict], now: datet
             added += 1
             if len(existing) >= target_count:
                 break
-        # If uniqueness alone would leave an edition empty, allow one reuse rather
-        # than display an empty section. This is intentionally a last resort.
         if not existing:
             for item in candidates:
                 key = _article_key(item)
