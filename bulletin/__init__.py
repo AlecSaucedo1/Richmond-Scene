@@ -10,8 +10,11 @@ from datetime import datetime, timezone
 from . import analysis as _analysis
 from . import editorial as _editorial
 from . import nearby as _nearby
+from . import neighborhood_coverage as _coverage
 from . import news as _news
 from . import readability as _readability
+from . import restaurant_news as _restaurant_news_module
+from .location_safety import safe_location_confidence as _safe_location_confidence
 from .neighborhood_coverage import (
     backfill_neighborhood_coverage as _backfill_neighborhood_coverage,
     fetch_neighborhood_news as _fetch_neighborhood_news,
@@ -27,6 +30,12 @@ from .restaurant_validation import strict_verified_review_neighborhoods as _stri
 
 _readability.readable_permit_scope = _readable_permit_scope
 _analysis.build_snapshot = _readability.build_snapshot
+
+# Install the ambiguity/cross-city guard in both modules that score neighborhood
+# location. Functions in neighborhood_coverage resolve the module global at runtime;
+# restaurant_news imported the scorer by name, so update that reference as well.
+_coverage.location_confidence = _safe_location_confidence
+_restaurant_news_module.location_confidence = _safe_location_confidence
 
 _original_fetch_recent = _news.NewsContextClient.fetch_recent
 _original_enrich_snapshot = _editorial.enrich_snapshot
@@ -72,18 +81,12 @@ async def _fetch_recent_deep(self, snapshot=None):
 
 _news.NewsContextClient.fetch_recent = _fetch_recent_deep
 
-# Keep the legacy strict validator installed for older paths. The broadened dining
-# search below adds a guarded targeted-query fallback only when no conflicting city
-# or San Francisco neighborhood is named.
 _news._verified_review_neighborhoods = _strict_verified_review_neighborhoods
 
 
 async def _fetch_restaurant_news(self):
     direct_items = await _fetch_neighborhood_restaurant_news(self)
     event = _news_ready_event(self)
-    # News and dining are launched together. Give the general neighborhood search a
-    # chance to finish so restaurant stories found there can enrich the dining pool.
-    # A timeout or failed general search simply leaves the direct dining results intact.
     try:
         await asyncio.wait_for(event.wait(), timeout=20)
     except asyncio.TimeoutError:
@@ -103,5 +106,4 @@ def _enrich_snapshot_with_local_reporting(snapshot, items, generated_at=None):
 
 _editorial.enrich_snapshot = _enrich_snapshot_with_local_reporting
 
-# Happenings Near You and the full bulletin share the same recency/outlet/location-ranked selector.
 _nearby._restaurant_review = _select_restaurant_story
