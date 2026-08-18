@@ -109,17 +109,17 @@
   const renderRestaurant = (item, neighborhoodName) => {
     const container = $('#nearby-restaurant');
     if (!item) {
-      container.innerHTML = `<p class="nearby-empty">No recent restaurant review could be verified for ${esc(neighborhoodName)}. The Bulletin will leave this space empty rather than substitute a restaurant from another neighborhood.</p>`;
+      container.innerHTML = `<p class="nearby-empty">No recent restaurant article could be verified for ${esc(neighborhoodName)}. The Bulletin will leave this space empty rather than substitute dining coverage from another neighborhood.</p>`;
       return;
     }
     container.innerHTML = `<article class="nearby-review-card">
       <div>
-        <p class="section-label">${esc(item.match || `Verified for ${neighborhoodName}`)}</p>
+        <p class="section-label">${esc(item.match || `Neighborhood dining · verified for ${neighborhoodName}`)}</p>
         <h3><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a></h3>
         ${item.summary ? `<p>${esc(item.summary)}</p>` : ''}
-        <a class="source-link" href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">Read the review →</a>
+        <a class="source-link" href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">Read restaurant coverage →</a>
       </div>
-      <div class="nearby-review-meta"><strong>${esc(item.publisher || 'Google News')}</strong><br>${esc(formatDate(item.published))}<br><br>Shown only when the review itself names this neighborhood or an approved neighborhood alias.</div>
+      <div class="nearby-review-meta"><strong>${esc(item.publisher || 'Google News')}</strong><br>${esc(formatDate(item.published))}<br><br>Reviews, openings, closures, chef/menu stories and other restaurant reporting can appear here, but only when the article itself names this neighborhood or an approved neighborhood alias.</div>
     </article>`;
   };
 
