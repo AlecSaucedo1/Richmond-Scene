@@ -25,7 +25,7 @@ from bulletin.realestate_safe import RealEstateClient
 from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
-APP_VERSION = "0.9.0"
+APP_VERSION = "1.0.0"
 
 
 def _hour_env(name: str, default: int) -> int:
@@ -64,6 +64,27 @@ _next_scheduled_refresh: str | None = None
 
 def _local_now() -> datetime:
     return datetime.now(REFRESH_TZ)
+
+
+def _parse_datetime(value: str | datetime | None) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _display_timestamp(value: str | datetime | None) -> str:
+    parsed = _parse_datetime(value)
+    if not parsed:
+        return "No successful refresh yet"
+    local = parsed.astimezone(REFRESH_TZ)
+    clock = local.strftime("%I:%M %p").lstrip("0")
+    return f"{local.strftime('%b')} {local.day}, {local.year} · {clock} PT"
 
 
 def _next_refresh_time(now: datetime | None = None) -> datetime:
@@ -106,20 +127,35 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
                 return _snapshot
             raise RuntimeError(_last_error)
 
-        generated_at = datetime.now(timezone.utc)
+        data_refreshed_at = datetime.now(timezone.utc)
+        try:
+            # Build the data edition first. The news client uses this preliminary snapshot
+            # to generate deeper searches for the strongest neighborhood signals.
+            fresh = build_snapshot(successful, data_refreshed_at)
+        except Exception as exc:
+            _last_error = f"{type(exc).__name__}: {exc}"
+            print(f"Bulletin data snapshot build failed: {_last_error}", flush=True)
+            if _snapshot:
+                return _snapshot
+            raise
+
         news_result, restaurant_result, real_estate_result = await asyncio.gather(
-            news_client.fetch_recent(),
+            news_client.fetch_recent(fresh),
             news_client.fetch_restaurant_reviews(),
             real_estate_client.fetch_recent(local_today),
             return_exceptions=True,
         )
 
-        news_items: list[dict] = []
+        prior_news_items = list((_snapshot or {}).get("news_items") or [])
+        prior_news_updated = ((_snapshot or {}).get("news_context") or {}).get("updated_at")
+        news_items = prior_news_items
+        news_refreshed_at: str | None = prior_news_updated
         if isinstance(news_result, BaseException):
             _news_error = f"{type(news_result).__name__}: {news_result}"
             print(f"Recent-news context refresh failed: {_news_error}", flush=True)
         else:
             news_items = news_result
+            news_refreshed_at = datetime.now(timezone.utc).isoformat()
             _news_error = None
 
         restaurant_reviews = list((_snapshot or {}).get("restaurant_reviews") or [])
@@ -139,8 +175,11 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
             _real_estate_error = None
 
         try:
-            fresh = build_snapshot(successful, generated_at)
-            enrich_snapshot(fresh, news_items, generated_at)
+            enrich_snapshot(fresh, news_items, data_refreshed_at)
+            # Preserve the time of the last successful news fetch independently of the
+            # DataSF refresh. Failed news attempts must not make old coverage look fresh.
+            fresh.setdefault("news_context", {})["updated_at"] = news_refreshed_at
+            fresh["news_items"] = news_items
             fresh["restaurant_reviews"] = restaurant_reviews
             fresh["real_estate"] = real_estate_data or {
                 "configured": False,
@@ -149,6 +188,13 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
                 "sales_count": 0,
                 "neighborhoods": {},
                 "city": {},
+            }
+            fresh["data_refreshed_at"] = data_refreshed_at.isoformat()
+            fresh["freshness"] = {
+                "data_refreshed_at": data_refreshed_at.isoformat(),
+                "data_refreshed_display": _display_timestamp(data_refreshed_at),
+                "news_refreshed_at": news_refreshed_at,
+                "news_refreshed_display": _display_timestamp(news_refreshed_at),
             }
             fresh["source_errors"] = source_errors
             fresh["available_sources"] = [item["key"] for item in successful]
@@ -159,11 +205,15 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
             store.save(fresh)
             _snapshot = fresh
             _last_error = None if not source_errors else "One or more DataSF sources are temporarily unavailable"
-            print(f"Bulletin refreshed ({reason}) at {generated_at.isoformat()} using {len(successful)} DataSF sources", flush=True)
+            print(
+                f"Bulletin refreshed ({reason}) at {data_refreshed_at.isoformat()} using {len(successful)} DataSF sources; "
+                f"news last successful refresh {news_refreshed_at}",
+                flush=True,
+            )
             return fresh
         except Exception as exc:
             _last_error = f"{type(exc).__name__}: {exc}"
-            print(f"Bulletin snapshot build failed: {_last_error}", flush=True)
+            print(f"Bulletin editorial snapshot build failed: {_last_error}", flush=True)
             if _snapshot:
                 return _snapshot
             raise
@@ -219,6 +269,7 @@ async def health() -> JSONResponse:
         "version": APP_VERSION,
         "has_snapshot": bool(_snapshot),
         "generated_at": (_snapshot or {}).get("generated_at"),
+        "freshness": (_snapshot or {}).get("freshness", {}),
         "degraded": bool(_source_errors),
         "source_errors": _source_errors,
         "news_error": _news_error,
@@ -243,6 +294,7 @@ async def manual_refresh() -> JSONResponse:
     return JSONResponse({
         "ok": True,
         "generated_at": fresh.get("generated_at"),
+        "freshness": fresh.get("freshness", {}),
         "degraded": bool(_source_errors),
         "source_errors": _source_errors,
         "news_error": _news_error,
