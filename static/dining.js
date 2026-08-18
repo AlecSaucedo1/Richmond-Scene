@@ -3,6 +3,7 @@
   if (!match) return;
 
   const esc = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  const norm = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const safeUrl = (value) => {
     try {
       const url = new URL(String(value || ''), window.location.origin);
@@ -22,8 +23,17 @@
       Array.isArray(item.verified_neighborhoods) &&
       item.verified_neighborhoods.includes(neighborhood)
     );
-    candidates.sort((a, b) => String(b.published || '').localeCompare(String(a.published || '')));
-    return candidates[0] || null;
+    const ranked = candidates.map((item) => {
+      const evidence = item?.neighborhood_evidence?.[neighborhood] || neighborhood;
+      let score = 20;
+      const title = ` ${norm(item.title)} `;
+      if (norm(evidence) && title.includes(` ${norm(evidence)} `)) score += 8;
+      const publisher = norm(item.publisher);
+      if (['san francisco chronicle','eater','sf standard','infatuation','mission local','kqed'].some((name) => publisher.includes(name))) score += 3;
+      return {item, score};
+    });
+    ranked.sort((a, b) => b.score - a.score || String(b.item.published || '').localeCompare(String(a.item.published || '')));
+    return ranked[0]?.item || null;
   };
 
   async function render() {
