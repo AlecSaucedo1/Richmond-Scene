@@ -32,21 +32,27 @@
   };
 
   const incidentCard = (item) => {
-    const metadata = Array.isArray(item.metadata) ? item.metadata : [];
-    const meta = [item.address ? `Near ${item.address}` : null, ...metadata, item.incident_number ? `SFPD case ${item.incident_number}` : null].filter(Boolean);
+    const meta = [
+      item.address ? `Near ${item.address}` : null,
+      item.reported_display ? `Reported ${item.reported_display}` : null,
+      item.occurred_display ? `Occurred ${item.occurred_display}` : null,
+      item.report_method || item.report_type || null,
+      item.status ? `Resolution: ${item.status}` : null,
+      item.incident_number ? `SFPD case ${item.incident_number}` : null,
+    ].filter(Boolean);
     const related = Array.isArray(item.related_types) && item.related_types.length
       ? `<p class="record-related"><strong>Also classified as:</strong> ${esc(item.related_types.join(' · '))}</p>`
       : '';
 
     return `<details class="record-item record-details enhanced-record incident-record">
       <summary>
-        <span><strong>${esc(item.title || 'Police incident report')}</strong><small>${esc(item.address || item.category || 'SFPD incident record')}${item.occurred_display ? ` · ${esc(item.occurred_display)}` : ''}</small></span>
+        <span><strong>${esc(item.title || 'Police incident report')}</strong><small>${item.reported_display ? `Reported ${esc(item.reported_display)}` : esc(item.address || item.category || 'SFPD incident record')}${item.occurred_display ? ` · occurred ${esc(item.occurred_display)}` : ''}</small></span>
       </summary>
       <div class="record-body">
         <p class="record-scope">${esc(item.description || "SFPD's public record does not provide a more specific plain-language incident description.")}</p>
         ${related}
         ${meta.length ? `<p class="record-meta">${esc(meta.join(' · '))}</p>` : ''}
-        <p class="record-source-classification">Locations are the privacy-protected intersections published by SFPD.</p>
+        <p class="record-source-classification">The Bulletin sorts this section by report filing date. Incident occurrence time is shown separately. Locations are the privacy-protected intersections published by SFPD.</p>
       </div>
     </details>`;
   };
@@ -79,7 +85,7 @@
       policeColumn.dataset.policeRecords = '';
       ledger.appendChild(policeColumn);
     }
-    policeColumn.innerHTML = `<p class="section-label">Recent police incident reports</p>${renderGroup(police, incidentCard, 'No recent police incident records available for this edition.')}`;
+    policeColumn.innerHTML = `<p class="section-label">Recent police reports filed</p>${renderGroup(police, incidentCard, 'No recent police reports available for this edition.')}`;
   }
 
   enhance().catch(() => {});
