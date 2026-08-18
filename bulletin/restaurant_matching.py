@@ -9,16 +9,16 @@ def _norm(value: Any) -> str:
 
 
 def select_restaurant_review(snapshot: dict, neighborhood: str) -> dict | None:
-    """Return only a review explicitly verified for the requested neighborhood.
+    """Return the newest useful restaurant story verified for this neighborhood.
 
-    The news client writes verified_neighborhoods only after the article title/summary
-    contains a controlled neighborhood name. Targeted Google News search placement is
-    never treated as location proof. If no review clears that check, return None rather
-    than filling the card with an unrelated San Francisco or Bay Area restaurant.
+    Despite the legacy function name, the eligible content is now broader than reviews:
+    openings, closures, chef/menu stories, profiles and reviews can all qualify. Location
+    verification remains strict so another neighborhood or Bay Area city can never fill
+    the card. No verified match means no article rather than a geographic fallback.
     """
     candidates: list[tuple[int, str, dict]] = []
     for item in snapshot.get("restaurant_reviews") or []:
-        if not item.get("review_verified"):
+        if not (item.get("restaurant_verified") or item.get("review_verified")):
             continue
         verified = set(item.get("verified_neighborhoods") or [])
         if neighborhood not in verified:
@@ -49,5 +49,6 @@ def select_restaurant_review(snapshot: dict, neighborhood: str) -> dict | None:
     evidence = (best.get("neighborhood_evidence") or {}).get(neighborhood, neighborhood)
     return {
         **best,
-        "match": f"Verified for {neighborhood} · article names {evidence}",
+        "match": f"{best.get('restaurant_story_type') or 'Neighborhood dining'} · verified for {neighborhood}",
+        "location_evidence": evidence,
     }
