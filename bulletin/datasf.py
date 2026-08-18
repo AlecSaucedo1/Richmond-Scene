@@ -18,7 +18,7 @@ class DataSFClient:
         self.max_retries = max(1, int(os.getenv("DATASF_MAX_RETRIES", "3")))
 
     async def _get(self, dataset_id: str, params: dict[str, str]) -> list[dict[str, Any]]:
-        headers = {"User-Agent": "sf-neighborhood-bulletin/0.2"}
+        headers = {"User-Agent": "sf-neighborhood-bulletin/1.2"}
         if self.app_token:
             headers["X-App-Token"] = self.app_token
         url = f"{self.base_url}/{dataset_id}.json"
@@ -75,6 +75,31 @@ class DataSFClient:
         if not raw:
             return today - timedelta(days=1)
         return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).date()
+
+    async def police_source_dates(self, config: SourceConfig, today: date) -> dict[str, str | None]:
+        """Return SFPD report-filed and incident-occurrence maxima separately.
+
+        SFPD open data can publish a newly approved report whose underlying incident
+        occurred several days earlier. Exposing both dates lets the Bulletin distinguish
+        upstream publication lag from an ingestion problem.
+        """
+        if config.key != "police":
+            return {}
+        params = {
+            "$select": "max(report_datetime) as latest_report,max(incident_datetime) as latest_incident",
+            "$where": (
+                f"{config.neighborhood_field} is not null and "
+                f"report_datetime <= '{self._iso_day(today, end=True)}' and "
+                f"incident_datetime <= '{self._iso_day(today, end=True)}'"
+            ),
+            "$limit": "1",
+        }
+        rows = await self._get(config.dataset_id, params)
+        row = rows[0] if rows else {}
+        return {
+            "latest_report": row.get("latest_report"),
+            "latest_incident": row.get("latest_incident"),
+        }
 
     async def daily_counts(self, config: SourceConfig, end_day: date, days: int = 84) -> list[dict[str, Any]]:
         start_day = end_day - timedelta(days=days - 1)
@@ -147,10 +172,11 @@ class DataSFClient:
 
     async def fetch_source(self, config: SourceConfig, today: date) -> dict[str, Any]:
         latest = await self.latest_date(config, today)
-        daily, categories, recent = await asyncio.gather(
+        daily, categories, recent, source_dates = await asyncio.gather(
             self.daily_counts(config, latest),
             self.category_daily_counts(config, latest),
             self.recent_records(config, latest),
+            self.police_source_dates(config, today),
         )
         return {
             "key": config.key,
@@ -158,4 +184,5 @@ class DataSFClient:
             "daily": daily,
             "categories": categories,
             "recent": recent,
+            "source_dates": source_dates,
         }
