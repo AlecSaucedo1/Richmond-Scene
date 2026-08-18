@@ -5,10 +5,10 @@
   <p class="eyebrow">CITYWIDE ANALYSIS</p>
   <h1>Why San Francisco changed this week</h1>
   <p class="lead-dek">{{ city.summary }}</p>
-  <div class="city-why-meta"><span>{{ city.news_count or 0 }} recent articles considered</span><span>Data through each source's latest available date</span></div>
+  <div class="city-why-meta"><span>{{ city.news_count or 0 }} recent articles considered</span><span>{{ city.targeted_news_count or 0 }} surfaced by targeted neighborhood/data searches</span><span>Data through each source's latest available date</span></div>
 </section>
 
-<section class="section-rule"><h2>The four signals</h2><p>Raw movement first, then the plausible explanation and reporting around it.</p></section>
+<section class="section-rule"><h2>The four signals</h2><p>Raw movement first, then the plausible explanation and reporting around the most consequential neighborhood changes.</p></section>
 <section class="city-theme-stack">
 {% for theme in city.themes %}
 <article class="city-theme" id="city-{{ theme.key }}">
@@ -23,9 +23,9 @@
       <p class="editorial-caution">The Bulletin treats news overlap as context, not proof that a reported event caused the data movement.</p>
     </div>
     <div class="city-theme-neighborhoods">
-      <h3>Neighborhoods moving the number</h3>
+      <h3>Most significant neighborhood signals</h3>
       {% for item in theme.neighborhoods %}
-      <a href="/neighborhood/{{ item.slug }}#story-{{ theme.key }}"><span>{{ item.name }}</span><strong>{% if item.delta > 0 %}+{% endif %}{{ item.delta }}</strong><small>{{ item.current }} latest records</small></a>
+      <a href="/neighborhood/{{ item.slug }}#story-{{ theme.key }}"><span>{{ item.name }}</span><strong>{% if item.delta > 0 %}+{% endif %}{{ item.delta }}</strong><small>{{ item.current }} latest records · significance {{ '%.0f'|format(item.signal_score) }}</small></a>
       {% endfor %}
     </div>
   </div>
@@ -49,12 +49,13 @@
 </section>
 
 {% if city.crossovers %}
-<section class="section-rule"><h2>Where data and news intersect</h2><p>Neighborhood signals with a recent article that may help explain what is happening.</p></section>
+<section class="section-rule"><h2>Where data and news intersect</h2><p>Only the strongest current neighborhood signals are shown here, each paired with a distinct recent article.</p></section>
 <section class="crossover-grid">
 {% for item in city.crossovers %}
 <article class="crossover-card">
   <a class="eyebrow" href="/neighborhood/{{ item.slug }}">{{ item.name }} · {{ item.section }}</a>
   <h3><a href="/neighborhood/{{ item.slug }}">{{ item.headline }}</a></h3>
+  {% if item.signal_reason %}<p class="crossover-significance"><strong>Why this signal matters:</strong> {{ item.signal_reason }}</p>{% endif %}
   <div class="crossover-arrow">Data signal <span>→</span> recent reporting</div>
   <a class="crossover-article" href="{{ item.article.url }}" target="_blank" rel="noopener noreferrer">
     <span>{{ item.article.publisher }}</span>
@@ -66,5 +67,5 @@
 </section>
 {% endif %}
 
-<section class="methodology"><p class="section-label">How to read this page</p><p>The city page aggregates neighborhood-level public-record counts and compares the latest seven-day window with the preceding four-week weekly average. Recent reporting is matched by neighborhood names, beat and specific business or permit details when available. These matches are editorial context, not causal claims. News links lead to the publisher or Google News result supplied by the live feed.</p></section>
+<section class="methodology"><p class="section-label">How to read this page</p><p>The city page aggregates neighborhood-level public-record counts and compares the latest seven-day window with the preceding four-week weekly average. It now prioritizes signals using deviation from baseline plus project scale, housing-unit changes, use changes and record volume; routine high-volume records receive less weight. News discovery combines broad city searches with targeted searches generated from the strongest neighborhood signals. Each article may anchor only one citywide crossover, which reduces repeated coverage. Matches are editorial context, not causal claims.</p></section>
 {% endblock %}
