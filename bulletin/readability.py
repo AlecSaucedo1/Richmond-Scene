@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
+from datetime import datetime
 from typing import Any
 
 from . import analysis as base
@@ -25,6 +25,90 @@ def _sentence(value: Any) -> str:
     raw = re.sub(r"\bOTC\b", "over-the-counter", raw, flags=re.I)
     raw = re.sub(r"\bMUNI\b", "Muni", raw, flags=re.I)
     return raw[0].upper() + raw[1:]
+
+
+def _money(value: Any) -> str:
+    amount = base.num(value)
+    if amount <= 0:
+        return ""
+    return base.money(amount)
+
+
+def _date_label(value: Any, include_time: bool = False) -> str:
+    raw = _norm(value)
+    if not raw:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if include_time:
+            clock = parsed.strftime("%I:%M %p").lstrip("0")
+            return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year} · {clock}"
+        return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}"
+    except (TypeError, ValueError):
+        return raw[:16].replace("T", " · ")
+
+
+# DBI scope-of-work descriptions are useful but often written in plan-review shorthand.
+# These substitutions expand only common construction abbreviations without adding facts.
+PERMIT_SCOPE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    (r"\(e\)", "existing"),
+    (r"\(n\)", "new"),
+    (r"\bw/o\b", "without"),
+    (r"\bw/", "with "),
+    (r"\br\s*&\s*r\b", "remove and replace"),
+    (r"\br\s*/\s*r\b", "remove and replace"),
+    (r"\brepl\.?\b", "replace"),
+    (r"\breplc\.?\b", "replace"),
+    (r"\binstl?\.?\b", "install"),
+    (r"\bext\.?\b", "exterior"),
+    (r"\bint\.?\b", "interior"),
+    (r"\bbldg\.?\b", "building"),
+    (r"\bkitch\.?\b", "kitchen"),
+    (r"\bbthr?m\.?\b", "bathroom"),
+    (r"\bflr\.?\b", "floor"),
+    (r"\bwdw?s?\.?\b", "window"),
+    (r"\bmech\.?\b", "mechanical"),
+    (r"\belec\.?\b", "electrical"),
+    (r"\bplumb\.?\b", "plumbing"),
+    (r"\bstruct\.?\b", "structural"),
+    (r"\bT\.?I\.?\b", "tenant improvements"),
+    (r"\bMEP\b", "mechanical, electrical and plumbing"),
+    (r"\bADA\b", "ADA accessibility"),
+    (r"\bADU\b", "accessory dwelling unit (ADU)"),
+    (r"\bN/?A\b", ""),
+)
+
+
+def readable_permit_scope(value: Any) -> str:
+    raw = _norm(value)
+    if not raw:
+        return "Scope of work was not described in the public filing."
+
+    cleaned = raw.replace("&", " and ").replace("@", " at ")
+    cleaned = re.sub(r"\s*;\s*", ". ", cleaned)
+    cleaned = re.sub(r"\s*\|\s*", ". ", cleaned)
+    for pattern, replacement in PERMIT_SCOPE_REPLACEMENTS:
+        cleaned = re.sub(pattern, replacement, cleaned, flags=re.I)
+
+    # DBI descriptions are frequently entered in all caps. Sentence case makes them
+    # readable while leaving numbers, addresses and technical acronyms intact.
+    letters = [c for c in cleaned if c.isalpha()]
+    if letters and sum(c.isupper() for c in letters) / len(letters) > 0.78:
+        cleaned = cleaned.lower()
+        cleaned = re.sub(r"\bada\b", "ADA", cleaned)
+        cleaned = re.sub(r"\badu\b", "ADU", cleaned)
+        cleaned = re.sub(r"\bhvac\b", "HVAC", cleaned)
+
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    cleaned = re.sub(r"([.]){2,}", ".", cleaned)
+    cleaned = cleaned.strip(" .,-")
+    if not cleaned:
+        return "Scope of work was not described in the public filing."
+    cleaned = cleaned[0].upper() + cleaned[1:]
+    if cleaned[-1] not in ".!?":
+        cleaned += "."
+    return base.text(cleaned, 360)
 
 
 def readable_permit_type(value: Any) -> str:
@@ -128,15 +212,41 @@ POLICE_CATEGORY = {
     "weapons offense": "Weapons offenses",
     "missing person": "Missing-person reports",
     "warrant": "Warrant-related incidents",
-    "non-criminal": "Non-criminal incidents",
-    "disorderly conduct": "Disorderly-conduct reports",
-    "suspicious occurrence": "Suspicious-occurrence reports",
+    "non-criminal": "Non-criminal incident",
+    "disorderly conduct": "Disorderly-conduct report",
+    "suspicious occurrence": "Suspicious-occurrence report",
+    "other miscellaneous": "Other police incident",
 }
+
+OPAQUE_POLICE_LABELS = {
+    "rpd general",
+    "rpd",
+    "general",
+    "miscellaneous",
+    "other miscellaneous",
+    "other",
+    "none",
+    "not applicable",
+    "n/a",
+}
+
+
+def _opaque_police_label(value: Any) -> bool:
+    raw = _lower(value).strip(" .,-")
+    if not raw:
+        return True
+    if raw in OPAQUE_POLICE_LABELS:
+        return True
+    if re.fullmatch(r"[a-z]{2,5}\s*(general|misc|other)", raw):
+        return True
+    if re.fullmatch(r"\d{4,8}", raw):
+        return True
+    return False
 
 
 def readable_police_category(value: Any) -> str:
     raw = _lower(value)
-    return POLICE_CATEGORY.get(raw, _sentence(value or "Reported incidents"))
+    return POLICE_CATEGORY.get(raw, _sentence(value or "Reported incident"))
 
 
 def readable_police_title(category: Any, subcategory: Any, description: Any) -> str:
@@ -145,11 +255,13 @@ def readable_police_title(category: Any, subcategory: Any, description: Any) -> 
         return "Theft from a vehicle reported"
     if "motor vehicle theft" in blob or "vehicle, stolen" in blob or "stolen vehicle" in blob:
         return "Vehicle theft reported"
+    if "vehicle recovered" in blob or "recovered vehicle" in blob:
+        return "Recovered vehicle report"
     if "burglary" in blob:
         return "Burglary reported"
     if "robbery" in blob:
         return "Robbery reported"
-    if "assault" in blob:
+    if "assault" in blob or "battery" in blob:
         return "Assault reported"
     if "malicious mischief" in blob or "vandalism" in blob:
         return "Vandalism reported"
@@ -163,8 +275,23 @@ def readable_police_title(category: Any, subcategory: Any, description: Any) -> 
         return "Weapons-related incident reported"
     if "suspicious" in blob:
         return "Suspicious occurrence reported"
+    if "warrant" in blob:
+        return "Warrant-related incident"
+
+    # Do not promote internal/open-data shorthand such as "RPD General" to a headline.
+    sub = _norm(subcategory)
+    desc = _norm(description)
+    if sub and not _opaque_police_label(sub):
+        cleaned = _sentence(sub)
+        return cleaned if cleaned.lower().endswith(("report", "reported", "incident")) else f"{cleaned} report"
+    if desc and not _opaque_police_label(desc):
+        cleaned = _sentence(desc)
+        return cleaned if cleaned.lower().endswith(("report", "reported", "incident")) else f"{cleaned} report"
+
     name = readable_police_category(category)
-    if name.lower().endswith(("reports", "incidents")):
+    if _opaque_police_label(name):
+        return "Police incident report"
+    if name.lower().endswith(("report", "incident", "incidents")):
         return name
     return f"{name} reported"
 
@@ -179,6 +306,15 @@ def readable_category(value: Any, source: str) -> str:
     return base.label(value, source)
 
 
+def _permit_address(r: dict[str, Any]) -> str:
+    street_number = "".join(
+        part for part in (_norm(r.get("street_number")), _norm(r.get("street_number_suffix"))) if part
+    )
+    street = " ".join(part for part in (street_number, _norm(r.get("street_name")), _norm(r.get("street_suffix"))) if part)
+    unit = "".join(part for part in (_norm(r.get("unit")), _norm(r.get("unit_suffix"))) if part)
+    return f"{street}, Unit {unit}" if street and unit else street
+
+
 def _permit_records(cfg: SourceConfig, rows: list[dict[str, Any]], hood: str) -> list[dict[str, Any]]:
     prepared: list[dict[str, Any]] = []
     for r in rows:
@@ -188,22 +324,54 @@ def _permit_records(cfg: SourceConfig, rows: list[dict[str, Any]], hood: str) ->
         proposed_units = base.unit_count(r.get("proposed_units"))
         unit_delta = proposed_units - existing_units if existing_units is not None and proposed_units is not None else None
         raw_type = base.text(r.get("permit_type_definition") or "Building permit", 100)
-        scope = base.text(r.get("description"), 240)
+        raw_scope = base.text(r.get("description"), 600)
+        scope_summary = readable_permit_scope(raw_scope)
         existing_use = base.text(r.get("existing_use"), 90)
         proposed_use = base.text(r.get("proposed_use"), 90)
+        estimated = base.num(r.get("estimated_cost"))
+        revised = base.num(r.get("revised_cost"))
+        filed_date = _date_label(r.get("filed_date"))
+        status_date = _date_label(r.get("status_date"))
+        status = _sentence(r.get("status"))
+
         context: list[str] = []
-        if scope:
-            context.append(scope)
-        if proposed_use and proposed_use != existing_use:
-            context.append(f"Use: {existing_use or 'not listed'} → {proposed_use}")
+        if unit_delta is not None and unit_delta != 0:
+            direction = f"+{unit_delta}" if unit_delta > 0 else str(unit_delta)
+            context.append(f"Unit count: {existing_units} → {proposed_units} ({direction} proposed)")
+        elif existing_units is not None and proposed_units is not None:
+            context.append(f"Unit count remains {proposed_units}")
+        if proposed_use and _lower(proposed_use) != _lower(existing_use):
+            context.append(f"Use: {_sentence(existing_use or 'not listed')} → {_sentence(proposed_use)}")
+
+        value_summary = ""
+        if revised > 0 and abs(revised - estimated) >= 1:
+            value_summary = f"Revised project value: {_money(revised)}"
+            if estimated > 0:
+                value_summary += f" (initial estimate {_money(estimated)})"
+        elif estimated > 0:
+            value_summary = f"Estimated project value: {_money(estimated)}"
+
+        status_summary = status
+        if status and status_date:
+            status_summary = f"{status} · {status_date}"
+
         prepared.append({
             "title": readable_permit_type(raw_type),
             "raw_title": raw_type,
-            "address": " ".join(str(r.get(k) or "").strip() for k in ("street_number", "street_name", "street_suffix")).strip(),
-            "description": base.text(" · ".join(context), 300),
-            "cost": base.num(r.get("estimated_cost")),
-            "status": base.text(r.get("status"), 60),
+            "raw_description": raw_scope,
+            "scope_summary": scope_summary,
+            "address": _permit_address(r),
+            "description": scope_summary,
+            "project_context": context,
+            "value_summary": value_summary,
+            "cost": revised or estimated,
+            "estimated_cost": estimated,
+            "revised_cost": revised,
+            "status": status,
+            "status_summary": status_summary,
+            "filed_date": filed_date,
             "permit_number": base.text(r.get("permit_number"), 40),
+            "permit_type": base.text(r.get("permit_type"), 20),
             "existing_units": existing_units,
             "proposed_units": proposed_units,
             "unit_delta": unit_delta,
@@ -247,28 +415,103 @@ def _service_records(cfg: SourceConfig, rows: list[dict[str, Any]], hood: str) -
     return out
 
 
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"true", "1", "yes", "y"}
+
+
 def _police_records(cfg: SourceConfig, rows: list[dict[str, Any]], hood: str) -> list[dict[str, Any]]:
-    grouped: Counter[tuple[str, str, str, str, str]] = Counter()
+    # One SFPD incident can have several incident-code rows. Group by incident number so
+    # the Bulletin presents one event tile rather than making classifications look like
+    # separate incidents.
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
     for r in rows:
         if _norm(r.get(cfg.neighborhood_field)) != hood:
             continue
-        category = base.text(r.get("incident_category"), 100)
-        subcategory = base.text(r.get("incident_subcategory"), 120)
-        description = base.text(r.get("incident_description"), 160)
-        intersection = base.text(r.get("intersection"), 120)
-        resolution = base.text(r.get("resolution"), 80)
-        title = readable_police_title(category, subcategory, description)
-        grouped[(title, readable_police_category(category), description or subcategory, intersection, resolution)] += 1
+        key = _norm(r.get("incident_number")) or _norm(r.get("incident_id")) or _norm(r.get("row_id"))
+        if not key:
+            key = "|".join(
+                _norm(r.get(field))
+                for field in ("incident_datetime", "intersection", "incident_category", "incident_description")
+            )
+        if key not in grouped:
+            grouped[key] = []
+            order.append(key)
+        grouped[key].append(r)
+
     records: list[dict[str, Any]] = []
-    for (title, category, description, intersection, resolution), count in grouped.most_common(8):
+    for key in order:
+        group = grouped[key]
+        first = group[0]
+        categories: list[str] = []
+        titles: list[str] = []
+        descriptions: list[str] = []
+        codes: list[str] = []
+        for r in group:
+            category = readable_police_category(r.get("incident_category"))
+            title = readable_police_title(r.get("incident_category"), r.get("incident_subcategory"), r.get("incident_description"))
+            description = _norm(r.get("incident_description"))
+            code = _norm(r.get("incident_code"))
+            if category and category not in categories:
+                categories.append(category)
+            if title and title not in titles and title != "Police incident report":
+                titles.append(title)
+            if description and not _opaque_police_label(description) and description not in descriptions:
+                descriptions.append(_sentence(description))
+            if code and code not in codes:
+                codes.append(code)
+
+        title = titles[0] if titles else "Police incident report"
+        related = [item for item in titles[1:] if item != title][:2]
+        category_context = [c for c in categories if c not in {"Other police incident", "Reported incident"}]
+
+        detail_parts: list[str] = []
+        if descriptions:
+            detail_parts.append("; ".join(descriptions[:2]))
+        elif category_context:
+            detail_parts.append("SFPD classifies this report as " + ", ".join(category_context[:3]) + ".")
+        else:
+            detail_parts.append("SFPD's public record does not provide a more specific plain-language incident description.")
+        if related:
+            detail_parts.append("Related classifications: " + "; ".join(related) + ".")
+
+        report_type = _sentence(first.get("report_type_description"))
+        filed_online = _truthy(first.get("filed_online"))
+        report_method = "Filed online through SFPD" if filed_online else report_type
+        occurred_at = _norm(first.get("incident_datetime"))
+        occurred_display = _date_label(occurred_at, include_time=True)
+        reported_display = _date_label(first.get("report_datetime"), include_time=True)
+        resolution = _sentence(first.get("resolution"))
+
+        metadata: list[str] = []
+        if occurred_display:
+            metadata.append(f"Occurred {occurred_display}")
+        if report_method:
+            metadata.append(report_method)
+        if resolution:
+            metadata.append(f"Resolution: {resolution}")
+
         records.append({
             "title": title,
-            "category": category,
-            "description": description if _lower(description) not in {_lower(title), _lower(category)} else "",
-            "address": intersection,
+            "category": ", ".join(category_context[:3]) or "Police incident",
+            "description": base.text(" ".join(detail_parts), 300),
+            "address": base.text(first.get("intersection"), 120),
             "status": resolution,
-            "count": count,
+            "occurred_at": occurred_at,
+            "occurred_display": occurred_display,
+            "reported_display": reported_display,
+            "report_type": report_type,
+            "report_method": report_method,
+            "filed_online": filed_online,
+            "incident_number": _norm(first.get("incident_number")),
+            "incident_id": _norm(first.get("incident_id")),
+            "incident_codes": codes,
+            "related_types": related,
+            "metadata": metadata,
+            "code_count": len(codes),
         })
+        if len(records) >= 8:
+            break
     return records
 
 
@@ -311,7 +554,7 @@ def build_snapshot(raw_sources: list[dict[str, Any]], generated_at) -> dict[str,
     snapshot["front_page"] = base.front_page(snapshot.get("editions", {}))
     methodology = snapshot.setdefault("methodology", {})
     methodology["readability"] = (
-        "Raw DataSF permit types, 311 subtypes and police classifications are translated into plain-English display labels. "
-        "Addresses, scope descriptions, use changes, service details, incident descriptions and source-published intersections/resolutions are retained when useful for context."
+        "Raw DataSF permit descriptions are expanded from common plan-review shorthand and paired with unit/use, value and status context. "
+        "Police code rows are grouped into incident-level tiles; opaque internal labels are not used as headlines, and source-published incident time, intersection, report type and resolution are shown when available."
     )
     return snapshot
