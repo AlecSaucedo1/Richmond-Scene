@@ -106,20 +106,20 @@
     </article>`;
   };
 
-  const renderRestaurant = (item) => {
+  const renderRestaurant = (item, neighborhoodName) => {
     const container = $('#nearby-restaurant');
     if (!item) {
-      container.innerHTML = '<p class="nearby-empty">Restaurant-review coverage is temporarily unavailable. The feed will retry at the next scheduled Bulletin refresh.</p>';
+      container.innerHTML = `<p class="nearby-empty">No recent restaurant review could be verified for ${esc(neighborhoodName)}. The Bulletin will leave this space empty rather than substitute a restaurant from another neighborhood.</p>`;
       return;
     }
     container.innerHTML = `<article class="nearby-review-card">
       <div>
-        <p class="section-label">${esc(item.match || 'Recent San Francisco review')}</p>
+        <p class="section-label">${esc(item.match || `Verified for ${neighborhoodName}`)}</p>
         <h3><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a></h3>
         ${item.summary ? `<p>${esc(item.summary)}</p>` : ''}
         <a class="source-link" href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">Read the review →</a>
       </div>
-      <div class="nearby-review-meta"><strong>${esc(item.publisher || 'Google News')}</strong><br>${esc(formatDate(item.published))}<br><br>The dining feed refreshes with the Bulletin and favors coverage naming the selected neighborhood.</div>
+      <div class="nearby-review-meta"><strong>${esc(item.publisher || 'Google News')}</strong><br>${esc(formatDate(item.published))}<br><br>Shown only when the review itself names this neighborhood or an approved neighborhood alias.</div>
     </article>`;
   };
 
@@ -145,7 +145,7 @@
     const politics = data.politics || [];
     $('#nearby-politics').innerHTML = politics.length ? politics.map(politicsCard).join('') : '<p class="nearby-empty">No current-year City Hall statement is specific enough to add useful local context right now.</p>';
 
-    renderRestaurant(data.restaurant_review);
+    renderRestaurant(data.restaurant_review, hood.name);
     results.hidden = false;
     picker.value = hood.slug;
     status.textContent = `Briefing ready for ${hood.name}. Updated ${formatDate(data.generated_at)}.`;
