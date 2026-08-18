@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from .config import ANALYSIS_NEIGHBORHOODS
@@ -14,7 +15,8 @@ def _query(neighborhood: str) -> str:
     # profiles and dining reviews all add useful neighborhood texture.
     return (
         f'"{anchor}" "San Francisco" '
-        'restaurant cafe dining chef menu opening opens closing closes review food when:180d'
+        '(restaurant OR cafe OR dining OR chef OR menu OR food) '
+        '(opening OR opens OR closing OR closes OR review OR profile OR expansion) when:180d'
     )
 
 
@@ -26,14 +28,14 @@ def _story_type(item: dict[str, Any]) -> str:
         return "Restaurant closure"
     if any(term in body for term in ("open", "opening", "debut", "launch")):
         return "Restaurant opening"
-    if any(term in body for term in ("chef", "menu", "owner", "ownership")):
+    if any(term in body for term in ("chef", "menu", "owner", "ownership", "expansion")):
         return "Restaurant news"
     return "Neighborhood dining"
 
 
 async def fetch_neighborhood_restaurant_news(client) -> list[dict]:
     jobs = [(neighborhood, _query(neighborhood)) for neighborhood in ANALYSIS_NEIGHBORHOODS]
-    fetched = await __import__("asyncio").gather(
+    fetched = await asyncio.gather(
         *(client._feed("restaurant_reviews", query, neighborhood) for neighborhood, query in jobs),
         return_exceptions=True,
     )
