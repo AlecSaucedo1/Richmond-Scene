@@ -51,13 +51,9 @@
     </details>`;
   };
 
-  const renderGroup = (items, renderer, groupId, emptyText) => {
+  const renderGroup = (items, renderer, emptyText) => {
     if (!items.length) return `<p class="muted">${esc(emptyText)}</p>`;
-    const visible = items.slice(0, 3).map(renderer).join('');
-    const hidden = items.length > 3
-      ? `<div id="${groupId}" hidden>${items.slice(3).map(renderer).join('')}</div><button type="button" class="show-more" data-expand-group="${groupId}" aria-expanded="false" data-more-label="Show ${items.length - 3} more" data-less-label="Show fewer">Show ${items.length - 3} more</button>`
-      : '';
-    return visible + hidden;
+    return items.slice(0, 5).map(renderer).join('');
   };
 
   async function enhance() {
@@ -74,7 +70,7 @@
     const police = edition?.notable?.police || [];
 
     if (columns[1]) {
-      columns[1].innerHTML = `<p class="section-label">Development & housing filings</p>${renderGroup(permits, (item) => permitCard(item, edition.name), 'permit-more-v2', 'No permit records in the current source window.')}`;
+      columns[1].innerHTML = `<p class="section-label">Development & housing filings</p>${renderGroup(permits, (item) => permitCard(item, edition.name), 'No permit records in the current source window.')}`;
     }
 
     let policeColumn = ledger.querySelector('[data-police-records]');
@@ -83,7 +79,7 @@
       policeColumn.dataset.policeRecords = '';
       ledger.appendChild(policeColumn);
     }
-    policeColumn.innerHTML = `<p class="section-label">Recent police incident reports</p>${renderGroup(police, incidentCard, 'police-more-v2', 'No recent police incident records available for this edition.')}`;
+    policeColumn.innerHTML = `<p class="section-label">Recent police incident reports</p>${renderGroup(police, incidentCard, 'No recent police incident records available for this edition.')}`;
   }
 
   enhance().catch(() => {});
