@@ -30,12 +30,14 @@ VENUE_SOURCES = (
     {"name": "Chase Center", "neighborhood": "Mission Bay", "category": "Music", "url": "https://www.chasecenter.com/events"},
     {"name": "Palace of Fine Arts", "neighborhood": "Marina", "category": "Culture", "url": "https://palaceoffinearts.com/events/"},
     {"name": "Yerba Buena Center for the Arts", "neighborhood": "South of Market", "category": "Culture", "url": "https://ybca.org/"},
+    {"name": "Asian Art Museum", "neighborhood": "Tenderloin", "category": "Culture", "url": "https://calendar.asianart.org/"},
+    {"name": "SFMOMA", "neighborhood": "South of Market", "category": "Culture", "url": "https://www.sfmoma.org/exhibitions/"},
 )
 
-# Current official-program entries provide a resilient baseline if a venue blocks a
-# scrape or changes markup. They automatically disappear when their end date passes.
+# Current official-program entries provide a resilient baseline if an institution
+# blocks a scrape or changes markup. They automatically disappear when dates pass.
 EXHIBITION_SEEDS = (
-    {"museum": "SFMOMA", "neighborhood": "South of Market", "title": "Matisse's Femme au chapeau: A Modern Scandal", "start_date": "2026-05-16", "end_date": "2026-09-13", "url": "https://www.sfmoma.org/exhibition/matisse-femme-au-chapeau/", "summary": "A major exhibition tracing the 1905 debut and enduring influence of Matisse's iconic painting."},
+    {"museum": "SFMOMA", "neighborhood": "South of Market", "title": "Matisse's Femme au chapeau: A Modern Scandal", "start_date": "2026-05-16", "end_date": "2026-09-13", "url": "https://www.sfmoma.org/exhibitions/", "summary": "A major exhibition tracing the 1905 debut and enduring influence of Matisse's iconic painting."},
     {"museum": "SFMOMA", "neighborhood": "South of Market", "title": "Graciela Iturbide: Between Two Worlds", "start_date": "2026-07-11", "end_date": "2026-11-29", "url": "https://www.sfmoma.org/exhibitions/", "summary": "An expansive survey of the Mexico City-based photographer's black-and-white work."},
     {"museum": "SFMOMA", "neighborhood": "South of Market", "title": "Jacob Hashimoto: Giant Arc", "start_date": "2026-08-22", "end_date": "2027-08-22", "url": "https://www.sfmoma.org/upcoming-exhibitions/", "summary": "A site-specific installation of more than 75,000 hand-crafted kites in the Roberts Family Gallery."},
     {"museum": "de Young", "neighborhood": "Golden Gate Park", "title": "Treasures of the Pharaohs", "start_date": "2026-08-01", "end_date": "2027-01-31", "url": "https://www.famsf.org/exhibitions", "summary": "More than 130 works spanning 3,000 years of ancient Egyptian art and culture."},
@@ -46,6 +48,11 @@ EXHIBITION_SEEDS = (
 )
 
 EVENT_SEEDS = (
+    {"venue": "SFMOMA", "neighborhood": "South of Market", "category": "Culture", "title": "Opening Celebration: Giant Arc by Jacob Hashimoto", "start_date": "2026-08-20", "end_date": "2026-08-20", "url": "https://www.sfmoma.org/exhibitions/", "summary": "An evening opening celebration for Jacob Hashimoto's new Giant Arc installation."},
+    {"venue": "Asian Art Museum", "neighborhood": "Tenderloin", "category": "Culture", "title": "Mahjong and Mocktails", "start_date": "2026-08-20", "end_date": "2026-08-20", "url": "https://calendar.asianart.org/", "summary": "Thursday-night cultural programming at the Asian Art Museum."},
+    {"venue": "Yerba Buena Center for the Arts", "neighborhood": "South of Market", "category": "Film", "title": "Through an Open Window", "start_date": "2026-08-15", "end_date": "2026-10-31", "url": "https://ybca.org/", "summary": "A recurring Saturday film program co-presented by GaHee Park, Michael Vass and YBCA."},
+    {"venue": "Asian Art Museum", "neighborhood": "Tenderloin", "category": "Culture", "title": "Drop-In A Capella Workshop with Acahub", "start_date": "2026-08-23", "end_date": "2026-08-23", "url": "https://calendar.asianart.org/", "summary": "A drop-in vocal workshop at the Asian Art Museum."},
+    {"venue": "Asian Art Museum", "neighborhood": "Tenderloin", "category": "Culture", "title": "Heiwa Taiko Performance", "start_date": "2026-08-30", "end_date": "2026-08-30", "url": "https://calendar.asianart.org/", "summary": "A live taiko performance at the Asian Art Museum."},
     {"venue": "Davies Symphony Hall", "neighborhood": "Hayes Valley", "category": "Music", "title": "Samara Joy with the SF Symphony", "start_date": "2026-09-08", "end_date": "2026-09-08", "url": "https://www.sfsymphony.org/", "summary": "Grammy-winning vocalist Samara Joy joins the San Francisco Symphony."},
     {"venue": "SFJAZZ Center", "neighborhood": "Hayes Valley", "category": "Music", "title": "Christian McBride with Benny Green & Gregory Hutchinson", "start_date": "2026-09-10", "end_date": "2026-09-11", "url": "https://www.sfjazz.org/tickets/productions/26-27/christian-mcbride-ray-brown-centennial-celebration/", "summary": "Christian McBride honors Ray Brown with an all-star trio."},
     {"venue": "War Memorial Opera House", "neighborhood": "Hayes Valley", "category": "Opera", "title": "Simon Boccanegra", "start_date": "2026-09-12", "end_date": "2026-09-27", "url": "https://www.sfopera.com/whats-on/", "summary": "San Francisco Opera opens its 2026–27 stage season with Verdi's political drama."},
@@ -91,7 +98,8 @@ def _flatten_jsonld(value: Any) -> list[dict[str, Any]]:
 
 def _jsonld_events(page: str) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
-    for raw in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', page, flags=re.I | re.S):
+    pattern = r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>'
+    for raw in re.findall(pattern, page, flags=re.I | re.S):
         try:
             payload = json.loads(html_lib.unescape(raw).strip())
         except Exception:
@@ -99,14 +107,16 @@ def _jsonld_events(page: str) -> list[dict[str, Any]]:
         for item in _flatten_jsonld(payload):
             types = item.get("@type")
             names = {str(types)} if not isinstance(types, list) else {str(x) for x in types}
-            if not any("Event" in name for name in names):
-                continue
-            if item.get("name") and item.get("startDate"):
+            if any("Event" in name for name in names) and item.get("name") and item.get("startDate"):
                 events.append(item)
     return events
 
 
 def _normalize_live_event(item: dict[str, Any], source: dict[str, str], kind: str) -> dict[str, Any] | None:
+    types = item.get("@type")
+    type_names = {str(types)} if not isinstance(types, list) else {str(x) for x in types}
+    if kind == "exhibition" and not any("Exhibition" in name or "VisualArts" in name for name in type_names):
+        return None
     start = _date(item.get("startDate"))
     if not start:
         return None
