@@ -41,8 +41,25 @@
 
   const notableText = (item) => {
     const title = item.title || item.category || item.address || 'Recent record';
-    const details = [item.address, item.count ? `${item.count} reports` : null, item.cost ? money(item.cost) : null, item.status].filter(Boolean);
-    return `<li><strong>${esc(title)}</strong>${details.length ? `<span>${esc(details.join(' · '))}</span>` : ''}${item.description ? `<span>${esc(item.description)}</span>` : ''}</li>`;
+    const primary = [];
+    if (item.address) primary.push(item.address);
+    if (item.value_summary) primary.push(item.value_summary);
+    else if (item.cost) primary.push(money(item.cost));
+    if (item.filed_date) primary.push(`Filed ${item.filed_date}`);
+    if (item.status_summary) primary.push(item.status_summary);
+    else if (item.status) primary.push(item.status);
+
+    const context = [];
+    if (Array.isArray(item.project_context)) context.push(...item.project_context);
+    if (Array.isArray(item.metadata)) context.push(...item.metadata);
+    if (item.incident_number) context.push(`SFPD case ${item.incident_number}`);
+
+    return `<li>
+      <strong>${esc(title)}</strong>
+      ${primary.length ? `<span>${esc(primary.join(' · '))}</span>` : ''}
+      ${item.description ? `<span>${esc(item.description)}</span>` : ''}
+      ${context.length ? `<span class="nearby-record-context">${esc(context.join(' · '))}</span>` : ''}
+    </li>`;
   };
 
   const sectionCard = (item, slug) => {
