@@ -98,12 +98,7 @@ async def fetch_neighborhood_restaurant_news(client) -> list[dict]:
 
 
 def merge_restaurant_news_candidates(restaurant_items: list[dict], news_items: list[dict]) -> list[dict]:
-    """Merge dining-specific search results with restaurant stories found by local news.
-
-    The general neighborhood search is often better at surfacing profiles, openings,
-    closures and business stories that do not use restaurant-review vocabulary. Reuse
-    those already location-checked articles rather than leaving the dining module empty.
-    """
+    """Merge dining search results with restaurant stories from verified local news."""
     deduped: dict[str, dict] = {}
     for item in restaurant_items:
         key = _article_key(item)
@@ -111,7 +106,10 @@ def merge_restaurant_news_candidates(restaurant_items: list[dict], news_items: l
             deduped[key] = dict(item)
 
     for item in news_items:
-        neighborhoods = set(item.get("local_verified_neighborhoods") or []) | set(item.get("target_neighborhoods") or [])
+        # Only reuse articles that passed the dedicated neighborhood-news location
+        # check. target_neighborhoods can also mean a data-signal search and is not
+        # sufficient geographic evidence for a dining card.
+        neighborhoods = set(item.get("local_verified_neighborhoods") or [])
         for neighborhood in neighborhoods:
             if neighborhood not in ANALYSIS_NEIGHBORHOODS:
                 continue
