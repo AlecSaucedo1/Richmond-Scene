@@ -30,12 +30,13 @@
         <article class="why-panel">
           <p class="section-label">THE WHY</p>
           <h2>${esc(editorial.headline)}</h2>
+          ${editorial.signal_reason ? `<div class="signal-note"><strong>Why this signal matters:</strong> ${esc(editorial.signal_reason)}</div>` : ""}
           <p>${esc(editorial.analysis)}</p>
           <div class="watch-box"><strong>What to watch next</strong>${esc(editorial.watch)}</div>
         </article>
         <aside class="matched-coverage">
           <p class="section-label">Recent reporting</p>
-          ${coverage.length ? coverage.map(articleCard).join("") : '<p class="muted">No recent article cleared the neighborhood-match threshold. Use the Web Context searches above to explore broader coverage without forcing a weak editorial match.</p>'}
+          ${coverage.length ? coverage.map(articleCard).join("") : '<p class="muted">No distinct recent article cleared the stronger neighborhood-match threshold. The Bulletin does not recycle a weak citywide story just to fill this space.</p>'}
         </aside>
       </div>`;
     const anchor = document.querySelector(".quick-read") || document.querySelector(".neighborhood-front");
