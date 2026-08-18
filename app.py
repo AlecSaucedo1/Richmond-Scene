@@ -25,7 +25,7 @@ from bulletin.realestate_safe import RealEstateClient
 from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.2.0"
 
 
 def _hour_env(name: str, default: int) -> int:
@@ -129,8 +129,6 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
 
         data_refreshed_at = datetime.now(timezone.utc)
         try:
-            # Build the data edition first. The news client uses this preliminary snapshot
-            # to generate deeper searches for the strongest neighborhood signals.
             fresh = build_snapshot(successful, data_refreshed_at)
         except Exception as exc:
             _last_error = f"{type(exc).__name__}: {exc}"
@@ -161,7 +159,7 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
         restaurant_reviews = list((_snapshot or {}).get("restaurant_reviews") or [])
         if isinstance(restaurant_result, BaseException):
             _restaurant_error = f"{type(restaurant_result).__name__}: {restaurant_result}"
-            print(f"Restaurant-review refresh failed: {_restaurant_error}", flush=True)
+            print(f"Restaurant-reporting refresh failed: {_restaurant_error}", flush=True)
         else:
             restaurant_reviews = restaurant_result
             _restaurant_error = None
@@ -176,8 +174,6 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
 
         try:
             enrich_snapshot(fresh, news_items, data_refreshed_at)
-            # Preserve the time of the last successful news fetch independently of the
-            # DataSF refresh. Failed news attempts must not make old coverage look fresh.
             fresh.setdefault("news_context", {})["updated_at"] = news_refreshed_at
             fresh["news_items"] = news_items
             fresh["restaurant_reviews"] = restaurant_reviews
@@ -269,7 +265,6 @@ async def health() -> JSONResponse:
         "version": APP_VERSION,
         "has_snapshot": bool(_snapshot),
         "generated_at": (_snapshot or {}).get("generated_at"),
-        "freshness": (_snapshot or {}).get("freshness", {}),
         "degraded": bool(_source_errors),
         "source_errors": _source_errors,
         "news_error": _news_error,
@@ -279,6 +274,7 @@ async def health() -> JSONResponse:
         "real_estate_configured": bool(real_estate.get("configured")),
         "last_error": _last_error,
         "last_refresh_reason": _last_refresh_reason,
+        "freshness": (_snapshot or {}).get("freshness") or {},
         "refresh_schedule": {
             "timezone": str(REFRESH_TZ),
             "morning_hour": MORNING_REFRESH_HOUR,
@@ -294,12 +290,12 @@ async def manual_refresh() -> JSONResponse:
     return JSONResponse({
         "ok": True,
         "generated_at": fresh.get("generated_at"),
-        "freshness": fresh.get("freshness", {}),
         "degraded": bool(_source_errors),
         "source_errors": _source_errors,
         "news_error": _news_error,
         "restaurant_error": _restaurant_error,
         "real_estate_error": _real_estate_error,
+        "freshness": fresh.get("freshness") or {},
     })
 
 
