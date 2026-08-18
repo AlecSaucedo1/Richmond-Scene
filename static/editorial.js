@@ -2,10 +2,10 @@
   const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
   const articleCard = (article) => `
     <a class="matched-article" href="${esc(article.url)}" target="_blank" rel="noopener noreferrer">
-      <span>${esc(article.publisher || "Recent coverage")}</span>
+      <span>${esc(article.publisher || "Recent coverage")}${article.context_only ? " · Neighborhood context" : " · Data-linked coverage"}</span>
       <strong>${esc(article.title)}</strong>
       ${article.summary ? `<small>${esc(article.summary)}</small>` : ""}
-      ${article.match_reason ? `<small><b>Why it matches:</b> ${esc(article.match_reason)}</small>` : ""}
+      ${article.match_reason ? `<small><b>Why it’s here:</b> ${esc(article.match_reason)}</small>` : ""}
     </a>`;
 
   async function snapshot() {
@@ -36,7 +36,7 @@
         </article>
         <aside class="matched-coverage">
           <p class="section-label">Recent reporting</p>
-          ${coverage.length ? coverage.map(articleCard).join("") : '<p class="muted">No distinct recent article cleared the stronger neighborhood-match threshold. The Bulletin does not recycle a weak citywide story just to fill this space.</p>'}
+          ${coverage.length ? coverage.map(articleCard).join("") : '<p class="muted">Neighborhood reporting is being refreshed. The Bulletin searches a longer local-news window rather than filling this space with unrelated citywide coverage.</p>'}
         </aside>
       </div>`;
     const anchor = document.querySelector(".quick-read") || document.querySelector(".neighborhood-front");
