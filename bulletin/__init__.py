@@ -30,6 +30,29 @@ from .restaurant_validation import strict_verified_review_neighborhoods as _stri
 
 _readability.readable_permit_scope = _readable_permit_scope
 
+_original_story = _analysis.story
+
+
+def _story_with_report_date_language(cfg, hood, stats, cats, recs):
+    item = _original_story(cfg, hood, stats, cats, recs)
+    if cfg.key != "police":
+        return item
+    replacements = (
+        ("Reported police incidents", "Police reports filed"),
+        ("reported police incidents", "police reports filed"),
+        ("reported incidents", "reports filed"),
+        ("seven-day source window", "seven-day report-filing window"),
+    )
+    for field in ("headline", "dek"):
+        value = str(item.get(field) or "")
+        for old, new in replacements:
+            value = value.replace(old, new)
+        item[field] = value
+    return item
+
+
+_analysis.story = _story_with_report_date_language
+
 
 def _build_snapshot_with_source_dates(raw_sources, generated_at):
     snapshot = _readability.build_snapshot(raw_sources, generated_at)
