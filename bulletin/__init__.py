@@ -8,6 +8,7 @@ import asyncio
 from datetime import datetime, timezone
 
 from . import analysis as _analysis
+from . import arts as _arts
 from . import editorial as _editorial
 from . import nearby as _nearby
 from . import neighborhood_coverage as _coverage
@@ -29,6 +30,38 @@ from .restaurant_news import (
 from .restaurant_validation import strict_verified_review_neighborhoods as _strict_verified_review_neighborhoods
 
 _readability.readable_permit_scope = _readable_permit_scope
+
+# Live Nation's canonical San Francisco Fillmore venue identifier occasionally differs
+# from older shared links. Normalize it here and keep two current major-venue events as
+# dated fallbacks so the Arts calendar remains useful if dynamic calendar markup fails.
+_arts.VENUE_SOURCES = tuple(
+    {**source, "url": "https://www.livenation.com/venue/KovZpZAE6eeA/the-fillmore-events"}
+    if source.get("name") == "The Fillmore" else source
+    for source in _arts.VENUE_SOURCES
+)
+_arts.EVENT_SEEDS = (
+    *_arts.EVENT_SEEDS,
+    {
+        "venue": "The Fillmore",
+        "neighborhood": "Western Addition",
+        "category": "Music",
+        "title": "Courtney Barnett: Creature of Habit Tour",
+        "start_date": "2026-08-26",
+        "end_date": "2026-08-28",
+        "url": "https://www.livenation.com/venue/KovZpZAE6eeA/the-fillmore-events",
+        "summary": "Courtney Barnett plays a three-night run at The Fillmore.",
+    },
+    {
+        "venue": "Chase Center",
+        "neighborhood": "Mission Bay",
+        "category": "Music",
+        "title": "Weezer: The Gathering",
+        "start_date": "2026-09-09",
+        "end_date": "2026-09-09",
+        "url": "https://www.chasecenter.com/events/weezer-20260909/",
+        "summary": "Weezer brings The Gathering tour to Chase Center with The Shins and Silversun Pickups.",
+    },
+)
 
 _original_police_records = _readability._police_records
 
