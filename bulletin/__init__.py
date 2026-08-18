@@ -30,6 +30,25 @@ from .restaurant_validation import strict_verified_review_neighborhoods as _stri
 
 _readability.readable_permit_scope = _readable_permit_scope
 
+_original_police_records = _readability._police_records
+
+
+def _police_records_with_filing_time(cfg, rows, hood):
+    records = _original_police_records(cfg, rows, hood)
+    for item in records:
+        reported = item.get("reported_display")
+        if not reported:
+            continue
+        metadata = list(item.get("metadata") or [])
+        label = f"Reported {reported}"
+        if label not in metadata:
+            metadata.insert(0, label)
+        item["metadata"] = metadata
+    return records
+
+
+_readability._police_records = _police_records_with_filing_time
+
 _original_story = _analysis.story
 
 
