@@ -96,10 +96,14 @@ SOURCES: tuple[SourceConfig, ...] = (
     ),
     SourceConfig(
         key="police",
-        label="Reported police incidents",
-        short_label="Police incidents",
+        label="Police incident reports filed",
+        short_label="Police reports filed",
         dataset_id="wg3w-h783",
-        date_field="incident_datetime",
+        # Use report_datetime for publication freshness. SFPD reports can enter open
+        # data days after the underlying incident occurred because they are published
+        # only after supervisory approval. The incident occurrence time is still kept
+        # on every record and shown to readers separately.
+        date_field="report_datetime",
         neighborhood_field="analysis_neighborhood",
         category_field="incident_category",
         section="Public Safety",
