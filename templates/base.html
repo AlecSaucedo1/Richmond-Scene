@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/static/editorial.css?v={{ version }}">
   <link rel="stylesheet" href="/static/realestate.css?v={{ version }}-free1">
   <link rel="stylesheet" href="/static/nearby.css?v={{ version }}-records2">
-  <link rel="stylesheet" href="/static/records.css?v={{ version }}-records3">
+  <link rel="stylesheet" href="/static/records.css?v={{ version }}-records4">
   <link rel="stylesheet" href="/static/dining.css?v={{ version }}-dining1">
   <link rel="stylesheet" href="/static/freshness.css?v={{ version }}">
   <script src="/static/app.js?v={{ version }}" defer></script>
@@ -20,7 +20,7 @@
   <script src="/static/cityhall.js?v={{ version }}" defer></script>
   <script src="/static/realestate.js?v={{ version }}-free1" defer></script>
   <script src="/static/nearby.js?v={{ version }}-dining2" defer></script>
-  <script src="/static/records.js?v={{ version }}-records3" defer></script>
+  <script src="/static/records.js?v={{ version }}-records4" defer></script>
   <script src="/static/dining.js?v={{ version }}-dining2" defer></script>
 </head>
 <body>
@@ -32,6 +32,7 @@
     <div class="freshness-strip" aria-label="Bulletin freshness">
       <span><strong>DATA REFRESHED</strong> {% if snapshot.freshness %}{{ snapshot.freshness.data_refreshed_display }}{% else %}{{ snapshot.generated_at[:16] }} UTC{% endif %}</span>
       <span><strong>NEWS REFRESHED</strong> {% if snapshot.freshness %}{{ snapshot.freshness.news_refreshed_display }}{% elif snapshot.news_context and snapshot.news_context.updated_at %}{{ snapshot.news_context.updated_at[:16] }} UTC{% else %}No successful refresh yet{% endif %}</span>
+      {% if snapshot.source_dates and snapshot.source_dates.police and snapshot.source_dates.police.latest_report %}<span><strong>SFPD REPORTS THROUGH</strong> {{ snapshot.source_dates.police.latest_report[:10] }}</span>{% endif %}
     </div>
     {% endif %}
   </header>
