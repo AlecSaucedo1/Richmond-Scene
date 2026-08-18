@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Arts — The San Francisco Bulletin{% endblock %}
+{% block content %}
+<section class="arts-hero">
+  <p class="eyebrow">ARTS DESK</p>
+  <h1>What’s on view and on stage</h1>
+  <p class="lead-dek">Current and upcoming museum exhibitions plus concerts, performances and cultural events at major San Francisco institutions and venues.</p>
+  <div class="arts-meta">
+    <span>{{ arts.exhibition_count or 0 }} current / upcoming exhibitions</span>
+    <span>{{ arts.event_count or 0 }} upcoming events</span>
+    <span>{{ arts.museum_count or 0 }} museums · {{ arts.venue_count or 0 }} venues</span>
+    <span>Refreshed {{ arts.updated_at or '—' }}</span>
+  </div>
+</section>
+
+<section class="arts-scoreboard">
+  <div><span>Museum exhibitions</span><strong>{{ arts.exhibition_count or 0 }}</strong></div>
+  <div><span>Major museums</span><strong>{{ arts.museum_count or 0 }}</strong></div>
+  <div><span>Upcoming performances</span><strong>{{ arts.event_count or 0 }}</strong></div>
+  <div><span>Major venues</span><strong>{{ arts.venue_count or 0 }}</strong></div>
+</section>
+
+<section class="section-rule"><h2>Museum exhibitions</h2><p>Current exhibitions first, followed by major upcoming shows. Each listing is assigned to the neighborhood containing the museum.</p></section>
+<section class="arts-exhibition-grid">
+{% for exhibit in arts.exhibitions %}
+  <article class="exhibit-card">
+    <div class="exhibit-card-top"><span>{{ exhibit.status }}</span><span>{{ exhibit.neighborhood }}</span></div>
+    <h3><a href="{{ exhibit.url }}" target="_blank" rel="noopener noreferrer">{{ exhibit.title }}</a></h3>
+    <p class="exhibit-museum">{{ exhibit.museum }}</p>
+    <p class="exhibit-dates">{{ exhibit.start_date }}{% if exhibit.end_date and exhibit.end_date != exhibit.start_date %} – {{ exhibit.end_date }}{% endif %}</p>
+    {% if exhibit.summary %}<p>{{ exhibit.summary }}</p>{% endif %}
+    <div class="exhibit-card-foot"><a href="/neighborhood/{{ snapshot.neighborhoods | selectattr('name','equalto',exhibit.neighborhood) | map(attribute='slug') | first }}#arts">Open neighborhood arts →</a><a href="{{ exhibit.url }}" target="_blank" rel="noopener noreferrer">Museum source ↗</a></div>
+  </article>
+{% else %}
+  <p class="muted">Museum exhibition listings are temporarily unavailable.</p>
+{% endfor %}
+</section>
+
+<section class="section-rule"><h2>Upcoming music & culture</h2><p>Major concerts, opera, jazz and cultural programming at prominent San Francisco venues, ordered by date.</p></section>
+<section class="arts-events">
+{% for event in arts.events %}
+  <article class="arts-event-row">
+    <div class="arts-event-date"><strong>{{ event.start_date[5:] if event.start_date else 'TBA' }}</strong><span>{{ event.category or 'Culture' }}</span></div>
+    <div class="arts-event-copy">
+      <p class="section-label">{{ event.venue }} · {{ event.neighborhood }}</p>
+      <h3><a href="{{ event.url }}" target="_blank" rel="noopener noreferrer">{{ event.title }}</a></h3>
+      {% if event.summary %}<p>{{ event.summary }}</p>{% endif %}
+    </div>
+    <a class="action-link" href="{{ event.url }}" target="_blank" rel="noopener noreferrer">Event details ↗</a>
+  </article>
+{% else %}
+  <p class="muted">Upcoming venue listings are temporarily unavailable.</p>
+{% endfor %}
+</section>
+
+<section class="section-rule"><h2>Arts by neighborhood</h2><p>Neighborhoods with a major museum, cultural institution or major performance venue on the current Arts desk.</p></section>
+<section class="arts-neighborhood-grid">
+{% for n in snapshot.neighborhoods %}
+  {% set desk = arts.neighborhoods.get(n.name, {}) %}
+  {% if desk.exhibitions or desk.events %}
+  <article class="arts-neighborhood-card">
+    <header><p class="section-label">{{ n.name }}</p><h2><a href="/neighborhood/{{ n.slug }}#arts">{{ (desk.exhibitions or [])|length }} exhibit{% if (desk.exhibitions or [])|length != 1 %}s{% endif %} · {{ (desk.events or [])|length }} event{% if (desk.events or [])|length != 1 %}s{% endif %}</a></h2></header>
+    {% for exhibit in (desk.exhibitions or [])[:2] %}<a class="mini-art" href="{{ exhibit.url }}" target="_blank" rel="noopener noreferrer"><span>{{ exhibit.museum }}</span><strong>{{ exhibit.title }}</strong></a>{% endfor %}
+    {% for event in (desk.events or [])[:2] %}<a class="mini-art" href="{{ event.url }}" target="_blank" rel="noopener noreferrer"><span>{{ event.venue }} · {{ event.start_date }}</span><strong>{{ event.title }}</strong></a>{% endfor %}
+    <a class="edition-card-foot" href="/neighborhood/{{ n.slug }}#arts"><span>Open neighborhood arts</span><span aria-hidden="true">→</span></a>
+  </article>
+  {% endif %}
+{% endfor %}
+</section>
+
+<section class="methodology">
+  <p class="section-label">Sources & scope</p>
+  <p>{{ arts.source_note }} The Arts desk focuses on major museums, presenting institutions and established performance venues rather than attempting to list every gallery, club or event in San Francisco. Exhibition dates and event schedules can change; the linked institution remains the source of truth.</p>
+</section>
+{% endblock %}
