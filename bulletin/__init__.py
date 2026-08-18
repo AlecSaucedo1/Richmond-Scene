@@ -29,7 +29,21 @@ from .restaurant_news import (
 from .restaurant_validation import strict_verified_review_neighborhoods as _strict_verified_review_neighborhoods
 
 _readability.readable_permit_scope = _readable_permit_scope
-_analysis.build_snapshot = _readability.build_snapshot
+
+
+def _build_snapshot_with_source_dates(raw_sources, generated_at):
+    snapshot = _readability.build_snapshot(raw_sources, generated_at)
+    diagnostics = {}
+    for source in raw_sources:
+        dates = dict(source.get("source_dates") or {})
+        if dates:
+            diagnostics[source.get("key") or "unknown"] = dates
+    if diagnostics:
+        snapshot["source_dates"] = diagnostics
+    return snapshot
+
+
+_analysis.build_snapshot = _build_snapshot_with_source_dates
 
 # Install the ambiguity/cross-city guard in both modules that score neighborhood
 # location. Functions in neighborhood_coverage resolve the module global at runtime;
