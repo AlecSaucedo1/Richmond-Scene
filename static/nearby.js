@@ -109,17 +109,22 @@
   const renderRestaurant = (item, neighborhoodName) => {
     const container = $('#nearby-restaurant');
     if (!item) {
-      container.innerHTML = `<p class="nearby-empty">No recent restaurant article could be verified for ${esc(neighborhoodName)}. The Bulletin will leave this space empty rather than substitute dining coverage from another neighborhood.</p>`;
+      container.innerHTML = `<p class="nearby-empty">Neighborhood dining coverage is being refreshed for ${esc(neighborhoodName)}. The Bulletin searches up to a year of reporting and favors the newest credible local match.</p>`;
       return;
     }
+    const confidence = item?.neighborhood_confidence?.[neighborhoodName] || 'explicit';
+    const evidence = item?.neighborhood_evidence?.[neighborhoodName] || neighborhoodName;
+    const locationNote = confidence === 'explicit'
+      ? `The article names ${evidence}.`
+      : `The article passed a targeted ${neighborhoodName} search and San Francisco location checks.`;
     container.innerHTML = `<article class="nearby-review-card">
       <div>
-        <p class="section-label">${esc(item.match || `Neighborhood dining · verified for ${neighborhoodName}`)}</p>
+        <p class="section-label">${esc(item.match || `Neighborhood dining · ${neighborhoodName}`)}</p>
         <h3><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a></h3>
         ${item.summary ? `<p>${esc(item.summary)}</p>` : ''}
         <a class="source-link" href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">Read restaurant coverage →</a>
       </div>
-      <div class="nearby-review-meta"><strong>${esc(item.publisher || 'Google News')}</strong><br>${esc(formatDate(item.published))}<br><br>Reviews, openings, closures, chef/menu stories and other restaurant reporting can appear here, but only when the article itself names this neighborhood or an approved neighborhood alias.</div>
+      <div class="nearby-review-meta"><strong>${esc(item.publisher || 'Recent coverage')}</strong><br>${esc(formatDate(item.published))}<br><br>${esc(locationNote)} Newer reporting is weighted more heavily, while credible older neighborhood dining coverage remains eligible.</div>
     </article>`;
   };
 
@@ -140,7 +145,9 @@
     $('#nearby-real-estate').innerHTML = sales.map(saleCard).join('');
 
     const coverage = data.coverage || [];
-    $('#nearby-coverage').innerHTML = coverage.length ? coverage.map(coverageCard).join('') : '<p class="nearby-empty">No recent local-news crossover cleared the Bulletin’s match threshold for this neighborhood.</p>';
+    $('#nearby-coverage').innerHTML = coverage.length
+      ? coverage.map(coverageCard).join('')
+      : '<p class="nearby-empty">Neighborhood reporting is being refreshed. The Bulletin now searches a longer local-news window instead of forcing a weak data crossover.</p>';
 
     const politics = data.politics || [];
     $('#nearby-politics').innerHTML = politics.length ? politics.map(politicsCard).join('') : '<p class="nearby-empty">No current-year City Hall statement is specific enough to add useful local context right now.</p>';
@@ -184,6 +191,5 @@
   locateButton.addEventListener('click', locate);
   picker.addEventListener('change', () => { if (picker.value) load({slug: picker.value}); });
 
-  // Ask once when the tab opens. The browser controls the permission prompt and remembers its state.
   locate();
 })();
