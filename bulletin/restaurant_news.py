@@ -11,8 +11,6 @@ from .news import RESTAURANT_LANGUAGE, RESTAURANT_NEIGHBORHOOD_TERMS, _article_k
 def _query(neighborhood: str) -> str:
     terms = RESTAURANT_NEIGHBORHOOD_TERMS.get(neighborhood) or (neighborhood,)
     anchors = " OR ".join(f'"{term}"' for term in terms[:3])
-    # Keep a long enough horizon to avoid empty editions. Google News still returns
-    # the newest matching items first, and ranking below heavily favors recency.
     return (
         f'({anchors}) "San Francisco" '
         '(restaurant OR cafe OR dining OR chef OR menu OR food OR bakery OR bar) when:365d'
@@ -41,6 +39,45 @@ def _confidence_weight(confidence: str | None) -> int:
     }.get(confidence or "", 0)
 
 
+def _enrich_for_neighborhood(item: dict, neighborhood: str) -> dict | None:
+    text = (item.get("title") or "") + " " + (item.get("summary") or "")
+    if not RESTAURANT_LANGUAGE.search(text):
+        return None
+    confidence, location_score, evidence = location_confidence(item, neighborhood)
+    if not confidence:
+        return None
+    return {
+        **item,
+        "verified_neighborhoods": [neighborhood],
+        "neighborhood_evidence": {neighborhood: evidence},
+        "neighborhood_confidence": {neighborhood: confidence},
+        "neighborhood_location_score": {neighborhood: location_score},
+        "restaurant_verified": True,
+        "review_verified": True,
+        "restaurant_story_type": _story_type(item),
+        "restaurant_source_score": publisher_score(item),
+        "restaurant_confidence_score": _confidence_weight(confidence),
+    }
+
+
+def _merge_candidate(deduped: dict[str, dict], enriched: dict, neighborhood: str) -> None:
+    key = _article_key(enriched)
+    if not key:
+        return
+    existing = deduped.get(key)
+    if not existing:
+        deduped[key] = enriched
+        return
+    neighborhoods = set(existing.get("verified_neighborhoods") or []) | {neighborhood}
+    existing["verified_neighborhoods"] = sorted(neighborhoods)
+    for field in ("neighborhood_evidence", "neighborhood_confidence", "neighborhood_location_score"):
+        mapping = dict(existing.get(field) or {})
+        mapping.update(enriched.get(field) or {})
+        existing[field] = mapping
+    if len(str(enriched.get("summary") or "")) > len(str(existing.get("summary") or "")):
+        existing["summary"] = enriched.get("summary")
+
+
 async def fetch_neighborhood_restaurant_news(client) -> list[dict]:
     jobs = [(neighborhood, _query(neighborhood)) for neighborhood in ANALYSIS_NEIGHBORHOODS]
     fetched = await asyncio.gather(
@@ -53,50 +90,33 @@ async def fetch_neighborhood_restaurant_news(client) -> list[dict]:
         if isinstance(result, BaseException):
             continue
         for item in result:
-            text = (item.get("title") or "") + " " + (item.get("summary") or "")
-            if not RESTAURANT_LANGUAGE.search(text):
-                continue
+            enriched = _enrich_for_neighborhood(item, neighborhood)
+            if enriched:
+                _merge_candidate(deduped, enriched, neighborhood)
 
-            # The result must either name the neighborhood directly or survive the
-            # targeted-search fallback checks in neighborhood_coverage. Those checks
-            # reject another Bay Area city and conflicting SF-neighborhood evidence.
-            confidence, location_score, evidence = location_confidence(item, neighborhood)
-            if not confidence:
-                continue
-
-            enriched = {
-                **item,
-                "verified_neighborhoods": [neighborhood],
-                "neighborhood_evidence": {neighborhood: evidence},
-                "neighborhood_confidence": {neighborhood: confidence},
-                "neighborhood_location_score": {neighborhood: location_score},
-                "restaurant_verified": True,
-                # Keep the legacy flag while older cached clients transition.
-                "review_verified": True,
-                "restaurant_story_type": _story_type(item),
-                "restaurant_source_score": publisher_score(item),
-                "restaurant_confidence_score": _confidence_weight(confidence),
-            }
-            key = _article_key(enriched)
-            if not key:
-                continue
-
-            existing = deduped.get(key)
-            if not existing:
-                deduped[key] = enriched
-                continue
-
-            neighborhoods = set(existing.get("verified_neighborhoods") or []) | {neighborhood}
-            existing["verified_neighborhoods"] = sorted(neighborhoods)
-            for field, value in (
-                ("neighborhood_evidence", evidence),
-                ("neighborhood_confidence", confidence),
-                ("neighborhood_location_score", location_score),
-            ):
-                mapping = dict(existing.get(field) or {})
-                mapping[neighborhood] = value
-                existing[field] = mapping
-
-    # Several candidates per neighborhood are useful because the selector can then
-    # prefer a newer article without sacrificing geographic relevance or outlet quality.
     return sorted(deduped.values(), key=lambda x: x.get("published", ""), reverse=True)[:240]
+
+
+def merge_restaurant_news_candidates(restaurant_items: list[dict], news_items: list[dict]) -> list[dict]:
+    """Merge dining-specific search results with restaurant stories found by local news.
+
+    The general neighborhood search is often better at surfacing profiles, openings,
+    closures and business stories that do not use restaurant-review vocabulary. Reuse
+    those already location-checked articles rather than leaving the dining module empty.
+    """
+    deduped: dict[str, dict] = {}
+    for item in restaurant_items:
+        key = _article_key(item)
+        if key:
+            deduped[key] = dict(item)
+
+    for item in news_items:
+        neighborhoods = set(item.get("local_verified_neighborhoods") or []) | set(item.get("target_neighborhoods") or [])
+        for neighborhood in neighborhoods:
+            if neighborhood not in ANALYSIS_NEIGHBORHOODS:
+                continue
+            enriched = _enrich_for_neighborhood(item, neighborhood)
+            if enriched:
+                _merge_candidate(deduped, enriched, neighborhood)
+
+    return sorted(deduped.values(), key=lambda x: x.get("published", ""), reverse=True)[:300]
