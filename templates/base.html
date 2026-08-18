@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/static/nearby.css?v={{ version }}-records2">
   <link rel="stylesheet" href="/static/records.css?v={{ version }}-records4">
   <link rel="stylesheet" href="/static/dining.css?v={{ version }}-dining1">
+  <link rel="stylesheet" href="/static/arts.css?v={{ version }}-arts1">
   <link rel="stylesheet" href="/static/freshness.css?v={{ version }}">
   <script src="/static/app.js?v={{ version }}" defer></script>
   <script src="/static/editorial.js?v={{ version }}" defer></script>
@@ -22,21 +23,23 @@
   <script src="/static/nearby.js?v={{ version }}-dining2" defer></script>
   <script src="/static/records.js?v={{ version }}-records4" defer></script>
   <script src="/static/dining.js?v={{ version }}-dining2" defer></script>
+  <script src="/static/arts.js?v={{ version }}-arts1" defer></script>
 </head>
 <body>
   <header class="site-header">
     <div class="utility-bar"><a href="/">San Francisco, California</a><span>Public records. Local context. The why behind the numbers.</span></div>
     <a class="masthead" href="/"><span class="masthead-kicker">THE</span><span class="masthead-name">SAN FRANCISCO BULLETIN</span><span class="masthead-rule">Neighborhood editions from the city's public record</span></a>
     {% if snapshot and snapshot.neighborhoods %}
-    <nav class="edition-nav" aria-label="Neighborhood editions"><span>EDITIONS</span><a class="city-link" href="/city">CITYWIDE WHY</a><a class="city-link" href="/near-you">HAPPENINGS NEAR YOU</a><a class="city-link" href="/real-estate">REAL ESTATE</a><a class="city-hall-link" href="/city-hall">CITY HALL VS DATA</a><select id="edition-picker" aria-label="Choose a neighborhood"><option value="">Choose a neighborhood</option>{% for n in snapshot.neighborhoods %}<option value="/neighborhood/{{ n.slug }}">{{ n.name }}</option>{% endfor %}</select></nav>
+    <nav class="edition-nav" aria-label="Neighborhood editions"><span>EDITIONS</span><a class="city-link" href="/city">CITYWIDE WHY</a><a class="city-link" href="/near-you">HAPPENINGS NEAR YOU</a><a class="city-link" href="/real-estate">REAL ESTATE</a><a class="city-link" href="/arts">ARTS</a><a class="city-hall-link" href="/city-hall">CITY HALL VS DATA</a><select id="edition-picker" aria-label="Choose a neighborhood"><option value="">Choose a neighborhood</option>{% for n in snapshot.neighborhoods %}<option value="/neighborhood/{{ n.slug }}">{{ n.name }}</option>{% endfor %}</select></nav>
     <div class="freshness-strip" aria-label="Bulletin freshness">
       <span><strong>DATA REFRESHED</strong> {% if snapshot.freshness %}{{ snapshot.freshness.data_refreshed_display }}{% else %}{{ snapshot.generated_at[:16] }} UTC{% endif %}</span>
       <span><strong>NEWS REFRESHED</strong> {% if snapshot.freshness %}{{ snapshot.freshness.news_refreshed_display }}{% elif snapshot.news_context and snapshot.news_context.updated_at %}{{ snapshot.news_context.updated_at[:16] }} UTC{% else %}No successful refresh yet{% endif %}</span>
+      {% if snapshot.arts and snapshot.arts.updated_at %}<span><strong>ARTS REFRESHED</strong> {{ snapshot.arts.updated_at[:16] }} UTC</span>{% endif %}
       {% if snapshot.source_dates and snapshot.source_dates.police and snapshot.source_dates.police.latest_report %}<span><strong>SFPD REPORTS THROUGH</strong> {{ snapshot.source_dates.police.latest_report[:10] }}</span>{% endif %}
     </div>
     {% endif %}
   </header>
   <main>{% block content %}{% endblock %}</main>
-  <footer class="site-footer"><strong>The San Francisco Bulletin</strong><p>Automated neighborhood reporting from official DataSF records, recent independent reporting, public transaction listings and sourced commercial-sale reporting. Counts and sales records are descriptive; news matches and political-statement checks include scope and timeframe caveats.</p><p>v{{ version }}</p></footer>
+  <footer class="site-footer"><strong>The San Francisco Bulletin</strong><p>Automated neighborhood reporting from official DataSF records, recent independent reporting, official arts calendars, public transaction listings and sourced commercial-sale reporting. Counts and sales records are descriptive; news matches and political-statement checks include scope and timeframe caveats.</p><p>v{{ version }}</p></footer>
 </body>
 </html>
