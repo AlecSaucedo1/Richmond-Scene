@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from bulletin.analysis import build_snapshot
+from bulletin.arts import ArtsClient
 from bulletin.config import SOURCES
 from bulletin.datasf import DataSFClient
 from bulletin.editorial import enrich_snapshot
@@ -25,7 +26,7 @@ from bulletin.realestate_safe import RealEstateClient
 from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.4.0"
 
 
 def _hour_env(name: str, default: int) -> int:
@@ -50,6 +51,7 @@ store = SnapshotStore()
 client = DataSFClient()
 news_client = NewsContextClient()
 real_estate_client = RealEstateClient()
+arts_client = ArtsClient()
 neighborhood_locator = NeighborhoodLocator()
 _snapshot = store.load()
 _snapshot_lock = asyncio.Lock()
@@ -58,6 +60,7 @@ _source_errors: dict[str, str] = {}
 _news_error: str | None = None
 _restaurant_error: str | None = None
 _real_estate_error: str | None = None
+_arts_error: str | None = None
 _last_refresh_reason: str | None = None
 _next_scheduled_refresh: str | None = None
 
@@ -102,7 +105,7 @@ def _next_refresh_time(now: datetime | None = None) -> datetime:
 
 
 async def refresh_snapshot(reason: str = "manual") -> dict:
-    global _snapshot, _last_error, _source_errors, _news_error, _restaurant_error, _real_estate_error, _last_refresh_reason
+    global _snapshot, _last_error, _source_errors, _news_error, _restaurant_error, _real_estate_error, _arts_error, _last_refresh_reason
     async with _snapshot_lock:
         _last_refresh_reason = reason
         local_today = _local_now().date()
@@ -137,10 +140,11 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
                 return _snapshot
             raise
 
-        news_result, restaurant_result, real_estate_result = await asyncio.gather(
+        news_result, restaurant_result, real_estate_result, arts_result = await asyncio.gather(
             news_client.fetch_recent(fresh),
             news_client.fetch_restaurant_reviews(),
             real_estate_client.fetch_recent(local_today),
+            arts_client.fetch_recent(local_today),
             return_exceptions=True,
         )
 
@@ -172,6 +176,14 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
             real_estate_data = real_estate_result
             _real_estate_error = None
 
+        arts_data = (_snapshot or {}).get("arts")
+        if isinstance(arts_result, BaseException):
+            _arts_error = f"{type(arts_result).__name__}: {arts_result}"
+            print(f"Arts refresh failed: {_arts_error}", flush=True)
+        else:
+            arts_data = arts_result
+            _arts_error = None
+
         try:
             enrich_snapshot(fresh, news_items, data_refreshed_at)
             fresh.setdefault("news_context", {})["updated_at"] = news_refreshed_at
@@ -185,25 +197,41 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
                 "neighborhoods": {},
                 "city": {},
             }
+            fresh["arts"] = arts_data or {
+                "configured": False,
+                "updated_at": None,
+                "source": "Official museum and venue calendars",
+                "source_note": "Arts sources are temporarily unavailable.",
+                "exhibitions": [],
+                "events": [],
+                "neighborhoods": {},
+                "museum_count": 0,
+                "venue_count": 0,
+                "exhibition_count": 0,
+                "event_count": 0,
+            }
             fresh["data_refreshed_at"] = data_refreshed_at.isoformat()
             fresh["freshness"] = {
                 "data_refreshed_at": data_refreshed_at.isoformat(),
                 "data_refreshed_display": _display_timestamp(data_refreshed_at),
                 "news_refreshed_at": news_refreshed_at,
                 "news_refreshed_display": _display_timestamp(news_refreshed_at),
+                "arts_refreshed_at": (fresh.get("arts") or {}).get("updated_at"),
+                "arts_refreshed_display": _display_timestamp((fresh.get("arts") or {}).get("updated_at")),
             }
             fresh["source_errors"] = source_errors
             fresh["available_sources"] = [item["key"] for item in successful]
             fresh["news_error"] = _news_error
             fresh["restaurant_error"] = _restaurant_error
             fresh["real_estate_error"] = _real_estate_error
+            fresh["arts_error"] = _arts_error
             fresh["refresh_reason"] = reason
             store.save(fresh)
             _snapshot = fresh
             _last_error = None if not source_errors else "One or more DataSF sources are temporarily unavailable"
             print(
                 f"Bulletin refreshed ({reason}) at {data_refreshed_at.isoformat()} using {len(successful)} DataSF sources; "
-                f"news last successful refresh {news_refreshed_at}",
+                f"news last successful refresh {news_refreshed_at}; arts {len((fresh.get('arts') or {}).get('exhibitions') or [])} exhibits / {len((fresh.get('arts') or {}).get('events') or [])} events",
                 flush=True,
             )
             return fresh
@@ -260,6 +288,7 @@ templates.env.filters["quote_plus"] = quote_plus
 async def health() -> JSONResponse:
     next_run = _next_scheduled_refresh or _next_refresh_time().isoformat()
     real_estate = (_snapshot or {}).get("real_estate") or {}
+    arts = (_snapshot or {}).get("arts") or {}
     return JSONResponse({
         "ok": True,
         "version": APP_VERSION,
@@ -272,6 +301,10 @@ async def health() -> JSONResponse:
         "restaurant_reviews": len((_snapshot or {}).get("restaurant_reviews") or []),
         "real_estate_error": _real_estate_error,
         "real_estate_configured": bool(real_estate.get("configured")),
+        "arts_error": _arts_error,
+        "arts_configured": bool(arts.get("configured")),
+        "arts_exhibitions": len(arts.get("exhibitions") or []),
+        "arts_events": len(arts.get("events") or []),
         "last_error": _last_error,
         "last_refresh_reason": _last_refresh_reason,
         "freshness": (_snapshot or {}).get("freshness") or {},
@@ -295,6 +328,7 @@ async def manual_refresh() -> JSONResponse:
         "news_error": _news_error,
         "restaurant_error": _restaurant_error,
         "real_estate_error": _real_estate_error,
+        "arts_error": _arts_error,
         "freshness": fresh.get("freshness") or {},
     })
 
@@ -356,6 +390,13 @@ async def real_estate(request: Request):
     if not _snapshot:
         return templates.TemplateResponse(request=request, name="building.html", context={"version": APP_VERSION}, status_code=202)
     return templates.TemplateResponse(request=request, name="real_estate.html", context={"snapshot": _snapshot, "real_estate": _snapshot.get("real_estate", {}), "version": APP_VERSION})
+
+
+@app.get("/arts", response_class=HTMLResponse)
+async def arts(request: Request):
+    if not _snapshot:
+        return templates.TemplateResponse(request=request, name="building.html", context={"version": APP_VERSION}, status_code=202)
+    return templates.TemplateResponse(request=request, name="arts.html", context={"snapshot": _snapshot, "arts": _snapshot.get("arts", {}), "version": APP_VERSION})
 
 
 @app.get("/city-hall", response_class=HTMLResponse)
