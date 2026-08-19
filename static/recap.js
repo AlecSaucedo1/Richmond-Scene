@@ -15,7 +15,6 @@
   let utterance = null;
   let speaking = false;
   let paused = false;
-  let lastBoundary = 0;
 
   const escText = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
   const words = (value) => escText(value).split(/\s+/).filter(Boolean);
@@ -32,6 +31,11 @@
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return '';
     return d.toLocaleDateString('en-US', {month:'long', day:'numeric', ...options});
+  };
+  const formatUpdated = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
   };
   const shortMoney = (value) => {
     const n = Number(value || 0);
@@ -124,7 +128,7 @@
 
     parts.push('That’s your Bulletin Brief. Open any neighborhood edition for the records, reporting, dining, real estate and arts behind the headlines.');
 
-    // Keep narration near 90 seconds at the deliberately relaxed playback rate.
+    // About 225 words at the relaxed narration rate lands close to 90 seconds.
     const maxWords = 235;
     const all = parts.join(' ').replace(/\.\./g, '.');
     const tokens = words(all);
@@ -163,7 +167,6 @@
     utterance.volume = 1.0;
     const voice = chooseVoice();
     if (voice) utterance.voice = voice;
-    lastBoundary = 0;
     utterance.onstart = () => {
       speaking = true;
       paused = false;
@@ -173,7 +176,6 @@
     };
     utterance.onboundary = (event) => {
       if (typeof event.charIndex === 'number' && recapText.length && progress) {
-        lastBoundary = event.charIndex;
         progress.style.width = `${Math.min(98, Math.round(event.charIndex / recapText.length * 100))}%`;
       }
     };
@@ -195,32 +197,6 @@
     window.speechSynthesis.speak(utterance);
   }
 
-  play?.addEventListener('click', () => {
-    if (!('speechSynthesis' in window)) return;
-    if (speaking && !paused) {
-      window.speechSynthesis.pause();
-      paused = true;
-      play.textContent = 'Resume';
-      status.textContent = 'Paused';
-      return;
-    }
-    if (speaking && paused) {
-      window.speechSynthesis.resume();
-      paused = false;
-      play.textContent = 'Pause';
-      status.textContent = 'Playing latest brief';
-      return;
-    }
-    startNarration();
-  });
-
-  transcriptToggle?.addEventListener('click', () => {
-    const isHidden = transcript.hidden;
-    transcript.hidden = !isHidden;
-    transcriptToggle.textContent = isHidden ? 'Hide transcript' : 'Transcript';
-    transcriptToggle.setAttribute('aria-expanded', String(isHidden));
-  });
-
   async function refreshRecap() {
     try {
       const response = await fetch('/api/bulletin', {headers:{Accept:'application/json'}, cache:'no-store'});
@@ -236,7 +212,7 @@
       const count = wordCount(recapText);
       const estimate = count / 155 * 60;
       duration.textContent = `About ${timeLabel(estimate)} · ${count} words`;
-      updated.textContent = `Updated ${formatDate(data.generated_at, {year:'numeric'})}`;
+      updated.textContent = `Updated ${formatUpdated(data.generated_at)}`;
       status.textContent = 'Ready to play';
       play.disabled = false;
       if (!('speechSynthesis' in window)) {
@@ -248,12 +224,41 @@
     }
   }
 
+  play?.addEventListener('click', async () => {
+    if (!('speechSynthesis' in window)) return;
+    if (speaking && !paused) {
+      window.speechSynthesis.pause();
+      paused = true;
+      play.textContent = 'Resume';
+      status.textContent = 'Paused';
+      return;
+    }
+    if (speaking && paused) {
+      window.speechSynthesis.resume();
+      paused = false;
+      play.textContent = 'Pause';
+      status.textContent = 'Playing latest brief';
+      return;
+    }
+    // A play request always checks the current snapshot first, so a page left open
+    // across the scheduled 7 a.m. / 6 p.m. refresh narrates the newest edition.
+    await refreshRecap();
+    startNarration();
+  });
+
+  transcriptToggle?.addEventListener('click', () => {
+    const isHidden = transcript.hidden;
+    transcript.hidden = !isHidden;
+    transcriptToggle.textContent = isHidden ? 'Hide transcript' : 'Transcript';
+    transcriptToggle.setAttribute('aria-expanded', String(isHidden));
+  });
+
   if ('speechSynthesis' in window) {
     window.speechSynthesis.getVoices();
     window.speechSynthesis.addEventListener?.('voiceschanged', () => window.speechSynthesis.getVoices());
   }
   window.addEventListener('pagehide', () => stopNarration(false));
   refreshRecap();
-  // The page can remain open across a scheduled Bulletin refresh. Re-check quietly.
+  // A long-open page updates automatically; playback also performs an immediate check.
   window.setInterval(refreshRecap, 5 * 60 * 1000);
 })();
