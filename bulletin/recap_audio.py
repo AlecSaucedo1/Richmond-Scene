@@ -221,6 +221,8 @@ class BulletinBriefAudioClient:
             "voice": self.voice if self.configured else None,
             "voice_label": "Marin neural voice" if self.voice == "marin" else f"{self.voice.title()} neural voice",
             "ai_narrated": self.configured,
+            "generated_at": None,
+            "error": None,
         }
         if not self.configured:
             meta["error"] = "OPENAI_API_KEY is not configured"
@@ -239,23 +241,26 @@ class BulletinBriefAudioClient:
             "Content-Type": "application/json",
             "User-Agent": "sf-neighborhood-bulletin/1.5",
         }
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
-            response = await client.post(TTS_URL, json=payload, headers=headers)
-            response.raise_for_status()
-            audio = response.content
-        if not audio:
-            raise RuntimeError("OpenAI speech generation returned an empty audio response")
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+                response = await client.post(TTS_URL, json=payload, headers=headers)
+                response.raise_for_status()
+                audio = response.content
+            if not audio:
+                raise RuntimeError("OpenAI speech generation returned an empty audio response")
 
-        self.audio_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = self.audio_path.with_suffix(".tmp.mp3")
-        temp_path.write_bytes(audio)
-        os.replace(temp_path, self.audio_path)
+            self.audio_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = self.audio_path.with_suffix(".tmp.mp3")
+            temp_path.write_bytes(audio)
+            os.replace(temp_path, self.audio_path)
 
-        meta.update({
-            "audio_ready": True,
-            "audio_url": "/api/bulletin-brief/audio",
-            "audio_bytes": len(audio),
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "error": None,
-        })
+            meta.update({
+                "audio_ready": True,
+                "audio_url": "/api/bulletin-brief/audio",
+                "audio_bytes": len(audio),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "error": None,
+            })
+        except Exception as exc:
+            meta["error"] = f"{type(exc).__name__}: {exc}"
         return meta
