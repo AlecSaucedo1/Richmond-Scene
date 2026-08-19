@@ -21,7 +21,17 @@ services:
         value: "14"
       - key: CACHE_PATH
         value: /var/data/bulletin-cache.json
+      - key: BULLETIN_BRIEF_AUDIO_PATH
+        value: /var/data/bulletin-brief.mp3
+      - key: BULLETIN_TTS_MODEL
+        value: gpt-4o-mini-tts
+      - key: BULLETIN_TTS_VOICE
+        value: marin
+      - key: BULLETIN_TTS_TIMEOUT_SECONDS
+        value: "45"
       - key: DATASF_APP_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
         sync: false
     disk:
       name: sf-neighborhood-bulletin-data
