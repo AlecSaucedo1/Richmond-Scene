@@ -10,7 +10,7 @@ from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -23,10 +23,11 @@ from bulletin.nearby import NeighborhoodLocator, build_happenings
 from bulletin.news import NewsContextClient
 from bulletin.political_quotes import build_quote_analysis
 from bulletin.realestate_safe import RealEstateClient
+from bulletin.recap_audio import BulletinBriefAudioClient
 from bulletin.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 
 
 def _hour_env(name: str, default: int) -> int:
@@ -52,6 +53,7 @@ client = DataSFClient()
 news_client = NewsContextClient()
 real_estate_client = RealEstateClient()
 arts_client = ArtsClient()
+brief_audio_client = BulletinBriefAudioClient()
 neighborhood_locator = NeighborhoodLocator()
 _snapshot = store.load()
 _snapshot_lock = asyncio.Lock()
@@ -61,6 +63,7 @@ _news_error: str | None = None
 _restaurant_error: str | None = None
 _real_estate_error: str | None = None
 _arts_error: str | None = None
+_brief_error: str | None = None
 _last_refresh_reason: str | None = None
 _next_scheduled_refresh: str | None = None
 
@@ -105,7 +108,7 @@ def _next_refresh_time(now: datetime | None = None) -> datetime:
 
 
 async def refresh_snapshot(reason: str = "manual") -> dict:
-    global _snapshot, _last_error, _source_errors, _news_error, _restaurant_error, _real_estate_error, _arts_error, _last_refresh_reason
+    global _snapshot, _last_error, _source_errors, _news_error, _restaurant_error, _real_estate_error, _arts_error, _brief_error, _last_refresh_reason
     async with _snapshot_lock:
         _last_refresh_reason = reason
         local_today = _local_now().date()
@@ -210,6 +213,13 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
                 "exhibition_count": 0,
                 "event_count": 0,
             }
+
+            brief = await brief_audio_client.generate(fresh)
+            fresh["bulletin_brief"] = brief
+            _brief_error = brief.get("error")
+            if _brief_error:
+                print(f"Bulletin Brief neural narration unavailable: {_brief_error}", flush=True)
+
             fresh["data_refreshed_at"] = data_refreshed_at.isoformat()
             fresh["freshness"] = {
                 "data_refreshed_at": data_refreshed_at.isoformat(),
@@ -218,6 +228,8 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
                 "news_refreshed_display": _display_timestamp(news_refreshed_at),
                 "arts_refreshed_at": (fresh.get("arts") or {}).get("updated_at"),
                 "arts_refreshed_display": _display_timestamp((fresh.get("arts") or {}).get("updated_at")),
+                "brief_refreshed_at": brief.get("generated_at"),
+                "brief_refreshed_display": _display_timestamp(brief.get("generated_at")),
             }
             fresh["source_errors"] = source_errors
             fresh["available_sources"] = [item["key"] for item in successful]
@@ -225,13 +237,15 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
             fresh["restaurant_error"] = _restaurant_error
             fresh["real_estate_error"] = _real_estate_error
             fresh["arts_error"] = _arts_error
+            fresh["brief_error"] = _brief_error
             fresh["refresh_reason"] = reason
             store.save(fresh)
             _snapshot = fresh
             _last_error = None if not source_errors else "One or more DataSF sources are temporarily unavailable"
             print(
                 f"Bulletin refreshed ({reason}) at {data_refreshed_at.isoformat()} using {len(successful)} DataSF sources; "
-                f"news last successful refresh {news_refreshed_at}; arts {len((fresh.get('arts') or {}).get('exhibitions') or [])} exhibits / {len((fresh.get('arts') or {}).get('events') or [])} events",
+                f"news last successful refresh {news_refreshed_at}; arts {len((fresh.get('arts') or {}).get('exhibitions') or [])} exhibits / {len((fresh.get('arts') or {}).get('events') or [])} events; "
+                f"brief {'neural audio ready' if brief.get('audio_ready') else 'browser fallback'}",
                 flush=True,
             )
             return fresh
@@ -289,6 +303,7 @@ async def health() -> JSONResponse:
     next_run = _next_scheduled_refresh or _next_refresh_time().isoformat()
     real_estate = (_snapshot or {}).get("real_estate") or {}
     arts = (_snapshot or {}).get("arts") or {}
+    brief = (_snapshot or {}).get("bulletin_brief") or {}
     return JSONResponse({
         "ok": True,
         "version": APP_VERSION,
@@ -305,6 +320,11 @@ async def health() -> JSONResponse:
         "arts_configured": bool(arts.get("configured")),
         "arts_exhibitions": len(arts.get("exhibitions") or []),
         "arts_events": len(arts.get("events") or []),
+        "brief_error": _brief_error,
+        "brief_tts_configured": brief_audio_client.configured,
+        "brief_audio_ready": bool(brief.get("audio_ready")),
+        "brief_voice": brief.get("voice"),
+        "brief_model": brief.get("model"),
         "last_error": _last_error,
         "last_refresh_reason": _last_refresh_reason,
         "freshness": (_snapshot or {}).get("freshness") or {},
@@ -329,6 +349,7 @@ async def manual_refresh() -> JSONResponse:
         "restaurant_error": _restaurant_error,
         "real_estate_error": _real_estate_error,
         "arts_error": _arts_error,
+        "brief_error": _brief_error,
         "freshness": fresh.get("freshness") or {},
     })
 
@@ -338,6 +359,18 @@ async def bulletin_api() -> JSONResponse:
     if not _snapshot:
         return JSONResponse({"status": "building", "message": "The first edition is being assembled from DataSF."}, status_code=202)
     return JSONResponse(_snapshot)
+
+
+@app.get("/api/bulletin-brief/audio")
+async def bulletin_brief_audio() -> FileResponse:
+    brief = (_snapshot or {}).get("bulletin_brief") or {}
+    if not brief.get("audio_ready") or not brief_audio_client.audio_path.exists():
+        raise HTTPException(status_code=404, detail="Neural narration is not available for the current Bulletin Brief")
+    return FileResponse(
+        path=brief_audio_client.audio_path,
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "no-store, max-age=0", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @app.post("/api/near-you")
