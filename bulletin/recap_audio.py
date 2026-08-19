@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import re
 from datetime import datetime, timezone
@@ -9,17 +10,19 @@ from typing import Any
 import httpx
 
 
-TTS_URL = "https://api.openai.com/v1/audio/speech"
-DEFAULT_MODEL = "gpt-4o-mini-tts"
+CHAT_AUDIO_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_MODEL = "gpt-audio-1.5"
 DEFAULT_VOICE = "marin"
+DEFAULT_FORMAT = "wav"
 VOICE_INSTRUCTIONS = (
-    "Read this as a polished local public-radio news host. Sound natural, warm, calm, "
-    "conversational, intelligent, and understated. Use a smooth medium pace around 150 to "
-    "160 words per minute, with subtle emphasis on neighborhood names and the key fact in "
-    "each story. Use natural sentence-to-sentence transitions and short human pauses. Avoid "
-    "an announcer voice, exaggerated enthusiasm, sing-song cadence, robotic spacing, or "
-    "dramatic pauses. Read dollar amounts, dates, abbreviations, and San Francisco place names "
-    "naturally. Do not add, remove, or paraphrase any words."
+    "You are the voice of a polished local public-radio news brief. Speak naturally, warmly, "
+    "calmly, conversationally, and intelligently. Keep the delivery understated and human. "
+    "Use a smooth medium pace around 150 to 160 words per minute, with subtle emphasis on "
+    "neighborhood names and the key fact in each story. Use natural sentence-to-sentence "
+    "transitions and short human pauses. Avoid an announcer voice, exaggerated enthusiasm, "
+    "sing-song cadence, robotic spacing, or dramatic pauses. Read dollar amounts, dates, "
+    "abbreviations, and San Francisco place names naturally. Speak the supplied Bulletin script "
+    "verbatim. Do not add commentary, introductions, sound effects, or any words not in the script."
 )
 
 
@@ -202,13 +205,21 @@ class BulletinBriefAudioClient:
         self.api_key = os.getenv("OPENAI_API_KEY", "").strip()
         self.model = os.getenv("BULLETIN_TTS_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
         self.voice = os.getenv("BULLETIN_TTS_VOICE", DEFAULT_VOICE).strip() or DEFAULT_VOICE
-        self.timeout = float(os.getenv("BULLETIN_TTS_TIMEOUT_SECONDS", "45"))
+        self.audio_format = os.getenv("BULLETIN_TTS_FORMAT", DEFAULT_FORMAT).strip().lower() or DEFAULT_FORMAT
+        if self.audio_format not in {"wav", "mp3"}:
+            self.audio_format = DEFAULT_FORMAT
+        self.timeout = float(os.getenv("BULLETIN_TTS_TIMEOUT_SECONDS", "60"))
         cache_path = Path(os.getenv("CACHE_PATH", "/tmp/bulletin-cache.json"))
-        self.audio_path = Path(os.getenv("BULLETIN_BRIEF_AUDIO_PATH", str(cache_path.with_name("bulletin-brief.mp3"))))
+        default_name = f"bulletin-brief.{self.audio_format}"
+        self.audio_path = Path(os.getenv("BULLETIN_BRIEF_AUDIO_PATH", str(cache_path.with_name(default_name))))
 
     @property
     def configured(self) -> bool:
         return bool(self.api_key)
+
+    @property
+    def media_type(self) -> str:
+        return "audio/wav" if self.audio_format == "wav" else "audio/mpeg"
 
     async def generate(self, snapshot: dict) -> dict[str, Any]:
         brief = build_bulletin_brief(snapshot)
@@ -221,6 +232,8 @@ class BulletinBriefAudioClient:
             "voice": self.voice if self.configured else None,
             "voice_label": "Marin neural voice" if self.voice == "marin" else f"{self.voice.title()} neural voice",
             "ai_narrated": self.configured,
+            "audio_format": self.audio_format if self.configured else None,
+            "media_type": self.media_type if self.configured else None,
             "generated_at": None,
             "error": None,
         }
@@ -230,11 +243,15 @@ class BulletinBriefAudioClient:
 
         payload = {
             "model": self.model,
-            "voice": self.voice,
-            "input": brief["transcript"],
-            "instructions": VOICE_INSTRUCTIONS,
-            "response_format": "mp3",
-            "speed": 1.0,
+            "modalities": ["text", "audio"],
+            "audio": {"voice": self.voice, "format": self.audio_format},
+            "messages": [
+                {"role": "system", "content": VOICE_INSTRUCTIONS},
+                {
+                    "role": "user",
+                    "content": "Speak the following Bulletin script exactly as written:\n\n" + brief["transcript"],
+                },
+            ],
         }
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -243,14 +260,21 @@ class BulletinBriefAudioClient:
         }
         try:
             async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
-                response = await client.post(TTS_URL, json=payload, headers=headers)
+                response = await client.post(CHAT_AUDIO_URL, json=payload, headers=headers)
                 response.raise_for_status()
-                audio = response.content
+                result = response.json()
+
+            message = (((result.get("choices") or [{}])[0]).get("message") or {})
+            audio_result = message.get("audio") or {}
+            encoded = audio_result.get("data")
+            if not encoded:
+                raise RuntimeError("OpenAI audio completion returned no audio data")
+            audio = base64.b64decode(encoded)
             if not audio:
-                raise RuntimeError("OpenAI speech generation returned an empty audio response")
+                raise RuntimeError("OpenAI audio completion decoded to an empty audio response")
 
             self.audio_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = self.audio_path.with_suffix(".tmp.mp3")
+            temp_path = self.audio_path.with_suffix(f".tmp.{self.audio_format}")
             temp_path.write_bytes(audio)
             os.replace(temp_path, self.audio_path)
 
