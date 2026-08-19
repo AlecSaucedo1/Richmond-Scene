@@ -13,7 +13,7 @@ import httpx
 CHAT_AUDIO_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_MODEL = "gpt-audio-1.5"
 DEFAULT_VOICE = "marin"
-DEFAULT_FORMAT = "wav"
+DEFAULT_FORMAT = "mp3"
 VOICE_INSTRUCTIONS = (
     "You are the voice of a polished local public-radio news brief. Speak naturally, warmly, "
     "calmly, conversationally, and intelligently. Keep the delivery understated and human. "
