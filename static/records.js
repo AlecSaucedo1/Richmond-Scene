@@ -8,17 +8,24 @@
 
   const permitCard = (item, neighborhood) => {
     const context = Array.isArray(item.project_context) && item.project_context.length
-      ? `<ul class="record-context-list">${item.project_context.map((part) => `<li>${esc(part)}</li>`).join('')}</ul>`
+      ? `<ul class="record-context-list">${item.project_context.filter((part) => !/^Owner listed by DBI:|^General contractor listed by DBI:/i.test(part)).map((part) => `<li>${esc(part)}</li>`).join('')}</ul>`
       : '';
     const value = item.value_summary || (item.cost ? `Project value: ${money(item.cost)}` : '');
     const meta = [item.filed_date ? `Filed ${item.filed_date}` : null, item.status_summary || item.status, item.permit_number ? `Permit ${item.permit_number}` : null].filter(Boolean);
     const address = item.address || '';
+    const owners = Array.isArray(item.owners) ? item.owners : [];
+    const contractors = Array.isArray(item.general_contractors) ? item.general_contractors : [];
+    const participants = (owners.length || contractors.length) ? `<div class="permit-participants">
+      ${owners.length ? `<div><span>OWNER LISTED BY DBI</span><strong>${owners.slice(0,2).map((x) => esc(x.name)).join(' · ')}</strong>${owners[0]?.role ? `<small>DBI role: ${esc(owners[0].role)}</small>` : ''}</div>` : ''}
+      ${contractors.length ? `<div><span>GENERAL CONTRACTOR LISTED BY DBI</span><strong>${contractors.slice(0,2).map((x) => esc(x.name)).join(' · ')}</strong>${contractors[0]?.role ? `<small>DBI role: ${esc(contractors[0].role)}</small>` : ''}</div>` : ''}
+    </div>` : `<p class="record-source-classification">No owner/general-contractor contact is listed in the DBI permit-contact data retrieved for this filing.</p>`;
+    const participantTerms = [item.owner, item.general_contractor].filter(Boolean).map((x) => `"${x}"`).join(' ');
     const webQuery = address
-      ? `"${address}" San Francisco building permit ${item.permit_number ? `"${item.permit_number}"` : ''}`
-      : `"${neighborhood}" San Francisco building permit ${item.permit_number || ''}`;
+      ? `"${address}" San Francisco building permit ${item.permit_number ? `"${item.permit_number}"` : ''} ${participantTerms}`
+      : `"${neighborhood}" San Francisco building permit ${item.permit_number || ''} ${participantTerms}`;
     const newsQuery = address
-      ? `"${address}" San Francisco housing development construction planning`
-      : `"${neighborhood}" San Francisco housing development construction planning`;
+      ? `"${address}" San Francisco ${participantTerms} housing development construction planning`
+      : `"${neighborhood}" San Francisco ${participantTerms} housing development construction planning`;
     const mapQuery = address ? `${address}, San Francisco` : `${neighborhood}, San Francisco`;
 
     return `<details class="record-item record-details enhanced-record permit-record">
@@ -29,12 +36,13 @@
       <div class="record-body">
         <p class="record-scope-label">Scope of work</p>
         <p class="record-scope">${esc(item.scope_summary || item.description || 'Scope of work was not described in the public filing.')}</p>
+        ${participants}
         ${context}
         ${value ? `<p class="record-value">${esc(value)}</p>` : ''}
         ${meta.length ? `<p class="record-meta">${esc(meta.join(' · '))}</p>` : ''}
         ${item.raw_title && item.raw_title !== item.title ? `<p class="record-source-classification">DBI permit type: ${esc(item.raw_title)}</p>` : ''}
         <div class="story-actions compact-actions">
-          <a class="action-link" href="${sourceUrl(webQuery)}" target="_blank" rel="noopener noreferrer">Search address ↗</a>
+          <a class="action-link" href="${sourceUrl(webQuery)}" target="_blank" rel="noopener noreferrer">Search project ↗</a>
           <a class="action-link" href="${sourceUrl(newsQuery, true)}" target="_blank" rel="noopener noreferrer">Find coverage ↗</a>
           <a class="action-link" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}" target="_blank" rel="noopener noreferrer">Map address ↗</a>
         </div>
