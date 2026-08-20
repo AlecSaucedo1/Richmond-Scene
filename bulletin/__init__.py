@@ -156,30 +156,33 @@ def _better_target_query(edition, story):
     records = edition.get("notable", {}).get(key, []) or []
     metric = edition.get("metrics", {}).get(key, {}) or {}
     first = records[0] if records else {}
+    hood_anchor = f'"{hood}"'
 
     if key == "businesses" and first:
         name = str(first.get("title") or "").strip()
         address = str(first.get("address") or "").strip()
         anchors = " ".join(x for x in (f'"{name}"' if name else "", f'"{address}"' if address else "") if x)
-        return f'{anchors or f"\"{hood}\""} "San Francisco" (opening OR storefront OR restaurant OR retail OR business) when:90d'
+        anchor_query = anchors or hood_anchor
+        return f'{anchor_query} "San Francisco" (opening OR storefront OR restaurant OR retail OR business) when:90d'
     if key == "permits" and first:
         address = str(first.get("address") or "").strip()
         permit = str(first.get("permit_number") or "").strip()
         anchors = " ".join(x for x in (f'"{address}"' if address else "", f'"{permit}"' if permit else "") if x)
-        return f'{anchors or f"\"{hood}\""} "San Francisco" (housing OR development OR construction OR planning OR permit) when:120d'
+        anchor_query = anchors or hood_anchor
+        return f'{anchor_query} "San Francisco" (housing OR development OR construction OR planning OR permit) when:120d'
     if key == "service_requests":
         categories = metric.get("categories") or []
         category = str(categories[0].get("display_category") or "city services") if categories else "city services"
         address = str(first.get("address") or "").strip()
-        anchor = f'"{address}"' if address else f'"{hood}"'
+        anchor = f'"{address}"' if address else hood_anchor
         return f'{anchor} "San Francisco" ({category}) (public works OR street OR park OR Muni OR neighborhood) when:90d'
     if key == "police":
         categories = metric.get("categories") or []
         category = str(categories[0].get("display_category") or "police") if categories else "police"
         intersection = str(first.get("address") or "").strip()
-        anchor = f'"{intersection}"' if intersection else f'"{hood}"'
+        anchor = f'"{intersection}"' if intersection else hood_anchor
         return f'{anchor} "San Francisco" SFPD ({category}) when:60d'
-    return f'"{hood}" "San Francisco" (business OR housing OR transit OR school OR park OR culture OR street) when:90d'
+    return f'{hood_anchor} "San Francisco" (business OR housing OR transit OR school OR park OR culture OR street) when:90d'
 
 
 _news._target_query = _better_target_query
