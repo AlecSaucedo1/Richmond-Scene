@@ -10,6 +10,9 @@ import httpx
 from .config import SourceConfig
 
 
+PERMIT_CONTACTS_DATASET_ID = "3pee-9qhc"
+
+
 class DataSFClient:
     def __init__(self) -> None:
         self.base_url = os.getenv("DATASF_BASE_URL", "https://data.sfgov.org/resource").rstrip("/")
@@ -138,6 +141,37 @@ class DataSFClient:
         }
         return await self._get(config.dataset_id, params)
 
+    async def permit_contacts(self, permit_numbers: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """Fetch DBI contacts for recent building permits without changing permit counts.
+
+        Building Permits Contacts is a one-to-many permit contact table. Fetch it
+        separately and attach contacts to the already-deduplicated permit rows so a
+        permit with several contacts never inflates the Bulletin's filing metrics.
+        """
+        cleaned = list(dict.fromkeys(str(value or "").strip() for value in permit_numbers if str(value or "").strip()))
+        if not cleaned:
+            return {}
+
+        contacts: dict[str, list[dict[str, Any]]] = {}
+        chunk_size = 60
+        for start in range(0, len(cleaned), chunk_size):
+            chunk = cleaned[start : start + chunk_size]
+            escaped = [value.replace("'", "''") for value in chunk]
+            where = "permit_number in (" + ",".join(f"'{value}'" for value in escaped) + ")"
+            rows = await self._get(
+                PERMIT_CONTACTS_DATASET_ID,
+                {
+                    "$select": "permit_number,first_name,last_name,role,firm_name",
+                    "$where": where,
+                    "$limit": "5000",
+                },
+            )
+            for row in rows:
+                permit_number = str(row.get("permit_number") or "").strip()
+                if permit_number:
+                    contacts.setdefault(permit_number, []).append(row)
+        return contacts
+
     async def recent_records(self, config: SourceConfig, end_day: date, days: int = 7) -> list[dict[str, Any]]:
         if not config.notable_fields:
             return []
@@ -167,6 +201,19 @@ class DataSFClient:
             if len(page) < page_size:
                 break
             offset += len(page)
+
+        if config.key == "permits" and rows:
+            permit_numbers = [str(row.get("permit_number") or "").strip() for row in rows]
+            try:
+                by_permit = await self.permit_contacts(permit_numbers)
+            except Exception as exc:
+                # Permit filings remain useful even if the secondary contacts source is
+                # temporarily unavailable. The missing enrichment is explicit in the UI.
+                print(f"DBI permit-contact enrichment failed: {type(exc).__name__}: {exc}", flush=True)
+                by_permit = {}
+            for row in rows:
+                permit_number = str(row.get("permit_number") or "").strip()
+                row["_permit_contacts"] = by_permit.get(permit_number, [])
 
         return rows
 
