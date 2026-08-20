@@ -21,6 +21,10 @@ from .neighborhood_coverage import (
     fetch_neighborhood_news as _fetch_neighborhood_news,
     merge_news as _merge_news,
 )
+from .permit_participants import (
+    build_market_participants as _build_market_participants,
+    enrich_permit_records as _enrich_permit_records,
+)
 from .permit_scope import readable_permit_scope as _readable_permit_scope
 from .restaurant_matching import select_restaurant_review as _select_restaurant_story
 from .restaurant_news import (
@@ -84,6 +88,16 @@ def _police_records_with_filing_time(cfg, rows, hood):
 
 _readability._police_records = _police_records_with_filing_time
 
+_original_permit_records = _readability._permit_records
+
+
+def _permit_records_with_participants(cfg, rows, hood):
+    records = _original_permit_records(cfg, rows, hood)
+    return _enrich_permit_records(rows, hood, cfg.neighborhood_field, records)
+
+
+_readability._permit_records = _permit_records_with_participants
+
 _original_story = _analysis.story
 
 
@@ -111,12 +125,21 @@ _analysis.story = _story_with_report_date_language
 def _build_snapshot_with_source_dates(raw_sources, generated_at):
     snapshot = _readability.build_snapshot(raw_sources, generated_at)
     diagnostics = {}
+    permit_source = None
     for source in raw_sources:
         dates = dict(source.get("source_dates") or {})
         if dates:
             diagnostics[source.get("key") or "unknown"] = dates
+        if source.get("key") == "permits":
+            permit_source = source
     if diagnostics:
         snapshot["source_dates"] = diagnostics
+    if permit_source:
+        snapshot["permit_market_participants"] = _build_market_participants(
+            permit_source,
+            snapshot.get("editions") or {},
+            "neighborhoods_analysis_boundaries",
+        )
     return snapshot
 
 
@@ -167,7 +190,16 @@ def _better_target_query(edition, story):
     if key == "permits" and first:
         address = str(first.get("address") or "").strip()
         permit = str(first.get("permit_number") or "").strip()
-        anchors = " ".join(x for x in (f'"{address}"' if address else "", f'"{permit}"' if permit else "") if x)
+        owner = str(first.get("owner") or "").strip()
+        contractor = str(first.get("general_contractor") or "").strip()
+        anchors = " ".join(
+            x for x in (
+                f'"{address}"' if address else "",
+                f'"{permit}"' if permit else "",
+                f'"{owner}"' if owner else "",
+                f'"{contractor}"' if contractor else "",
+            ) if x
+        )
         anchor_query = anchors or hood_anchor
         return f'{anchor_query} "San Francisco" (housing OR development OR construction OR planning OR permit) when:120d'
     if key == "service_requests":
