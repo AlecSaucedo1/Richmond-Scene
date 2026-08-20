@@ -4,7 +4,7 @@
 
   const esc = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const money = (value) => Number(value || 0).toLocaleString('en-US', {style:'currency', currency:'USD', maximumFractionDigits:0});
-  const sourceUrl = (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  const sourceUrl = (query, news=false) => `https://www.google.com/search?${news ? 'tbm=nws&' : ''}q=${encodeURIComponent(query)}`;
 
   const permitCard = (item, neighborhood) => {
     const context = Array.isArray(item.project_context) && item.project_context.length
@@ -12,7 +12,14 @@
       : '';
     const value = item.value_summary || (item.cost ? `Project value: ${money(item.cost)}` : '');
     const meta = [item.filed_date ? `Filed ${item.filed_date}` : null, item.status_summary || item.status, item.permit_number ? `Permit ${item.permit_number}` : null].filter(Boolean);
-    const search = sourceUrl(`${item.address || neighborhood} San Francisco building permit ${item.permit_number || ''}`);
+    const address = item.address || '';
+    const webQuery = address
+      ? `"${address}" San Francisco building permit ${item.permit_number ? `"${item.permit_number}"` : ''}`
+      : `"${neighborhood}" San Francisco building permit ${item.permit_number || ''}`;
+    const newsQuery = address
+      ? `"${address}" San Francisco housing development construction planning`
+      : `"${neighborhood}" San Francisco housing development construction planning`;
+    const mapQuery = address ? `${address}, San Francisco` : `${neighborhood}, San Francisco`;
 
     return `<details class="record-item record-details enhanced-record permit-record">
       <summary>
@@ -26,12 +33,16 @@
         ${value ? `<p class="record-value">${esc(value)}</p>` : ''}
         ${meta.length ? `<p class="record-meta">${esc(meta.join(' · '))}</p>` : ''}
         ${item.raw_title && item.raw_title !== item.title ? `<p class="record-source-classification">DBI permit type: ${esc(item.raw_title)}</p>` : ''}
-        <div class="story-actions compact-actions"><a class="action-link" href="${search}" target="_blank" rel="noopener noreferrer">Find permit context ↗</a></div>
+        <div class="story-actions compact-actions">
+          <a class="action-link" href="${sourceUrl(webQuery)}" target="_blank" rel="noopener noreferrer">Search address ↗</a>
+          <a class="action-link" href="${sourceUrl(newsQuery, true)}" target="_blank" rel="noopener noreferrer">Find coverage ↗</a>
+          <a class="action-link" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}" target="_blank" rel="noopener noreferrer">Map address ↗</a>
+        </div>
       </div>
     </details>`;
   };
 
-  const incidentCard = (item) => {
+  const incidentCard = (item, neighborhood) => {
     const meta = [
       item.address ? `Near ${item.address}` : null,
       item.reported_display ? `Reported ${item.reported_display}` : null,
@@ -43,6 +54,9 @@
     const related = Array.isArray(item.related_types) && item.related_types.length
       ? `<p class="record-related"><strong>Also classified as:</strong> ${esc(item.related_types.join(' · '))}</p>`
       : '';
+    const place = item.address || neighborhood;
+    const webQuery = `"${place}" San Francisco SFPD ${item.incident_number ? `"${item.incident_number}"` : item.category || ''}`;
+    const newsQuery = `"${place}" San Francisco SFPD police ${item.category || ''}`;
 
     return `<details class="record-item record-details enhanced-record incident-record">
       <summary>
@@ -53,6 +67,10 @@
         ${related}
         ${meta.length ? `<p class="record-meta">${esc(meta.join(' · '))}</p>` : ''}
         <p class="record-source-classification">The Bulletin sorts this section by report filing date. Incident occurrence time is shown separately. Locations are the privacy-protected intersections published by SFPD.</p>
+        <div class="story-actions compact-actions">
+          <a class="action-link" href="${sourceUrl(webQuery)}" target="_blank" rel="noopener noreferrer">Search case context ↗</a>
+          <a class="action-link" href="${sourceUrl(newsQuery, true)}" target="_blank" rel="noopener noreferrer">Find coverage ↗</a>
+        </div>
       </div>
     </details>`;
   };
@@ -85,7 +103,7 @@
       policeColumn.dataset.policeRecords = '';
       ledger.appendChild(policeColumn);
     }
-    policeColumn.innerHTML = `<p class="section-label">Recent police reports filed</p>${renderGroup(police, incidentCard, 'No recent police reports available for this edition.')}`;
+    policeColumn.innerHTML = `<p class="section-label">Recent police reports filed</p>${renderGroup(police, (item) => incidentCard(item, edition.name), 'No recent police reports available for this edition.')}`;
   }
 
   enhance().catch(() => {});
