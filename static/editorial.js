@@ -1,15 +1,30 @@
 (() => {
   const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
-  const articleCard = (article) => `
+  const age = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+    const hours = Math.max(0, (Date.now() - d.getTime()) / 36e5);
+    if (hours < 1) return "Just published";
+    if (hours < 24) return `${Math.floor(hours)}h ago`;
+    if (hours < 48) return "Yesterday";
+    if (hours < 24 * 7) return `${Math.floor(hours / 24)}d ago`;
+    return d.toLocaleDateString("en-US", {month:"short", day:"numeric"});
+  };
+  const articleCard = (article) => {
+    const contextLabel = article.context_only ? "Neighborhood read" : "Data-linked coverage";
+    const published = age(article.published);
+    return `
     <a class="matched-article" href="${esc(article.url)}" target="_blank" rel="noopener noreferrer">
-      <span>${esc(article.publisher || "Recent coverage")}${article.context_only ? " · Neighborhood context" : " · Data-linked coverage"}</span>
+      <span>${esc(article.publisher || "Recent coverage")} · ${contextLabel}${published ? ` · ${esc(published)}` : ""}</span>
       <strong>${esc(article.title)}</strong>
-      ${article.summary ? `<small>${esc(article.summary)}</small>` : ""}
-      ${article.match_reason ? `<small><b>Why it’s here:</b> ${esc(article.match_reason)}</small>` : ""}
+      ${article.summary ? `<small class="article-excerpt">${esc(article.summary)}</small>` : ""}
+      ${article.match_reason ? `<small class="article-why"><b>Why it adds context:</b> ${esc(article.match_reason)}</small>` : ""}
+      <em>Read original reporting ↗</em>
     </a>`;
+  };
 
   async function snapshot() {
-    const response = await fetch("/api/bulletin", {headers:{"Accept":"application/json"}});
+    const response = await fetch("/api/bulletin", {headers:{"Accept":"application/json"}, cache:"no-store"});
     if (!response.ok) return null;
     return response.json();
   }
