@@ -28,6 +28,8 @@ from .restaurant_news import (
     merge_restaurant_news_candidates as _merge_restaurant_news_candidates,
 )
 from .restaurant_validation import strict_verified_review_neighborhoods as _strict_verified_review_neighborhoods
+from .store import SnapshotStore
+from .storytelling import build_live_digest as _build_live_digest, enrich_storytelling as _enrich_storytelling
 
 _readability.readable_permit_scope = _readable_permit_scope
 
@@ -126,6 +128,75 @@ _analysis.build_snapshot = _build_snapshot_with_source_dates
 _coverage.location_confidence = _safe_location_confidence
 _restaurant_news_module.location_confidence = _safe_location_confidence
 
+# Higher-value searches: favor specific changes and named local institutions over the
+# generic "neighborhood" query that can return thin roundups or unrelated mentions.
+_news.NEWS_QUERY_GROUPS = {
+    "businesses": [
+        '"San Francisco" (restaurant OR retail OR storefront OR merchant) (opening OR closing OR lease OR vacancy OR expansion) when:21d',
+        '"San Francisco" (small business OR commercial corridor OR storefront) (permit OR lease OR zoning OR expansion) when:45d',
+    ],
+    "permits": [
+        '"San Francisco" (housing OR development OR construction) (proposed OR approved OR filed OR groundbreaking OR conversion) when:30d',
+        '"San Francisco" (planning commission OR rezoning OR redevelopment OR office conversion OR affordable housing) neighborhood when:60d',
+    ],
+    "service_requests": [
+        '"San Francisco" (street OR sidewalk OR park OR transit OR public works) (closure OR construction OR repair OR cleanup OR change) neighborhood when:30d',
+        '"San Francisco" (Muni OR roadwork OR plaza OR park OR sanitation) neighborhood project when:45d',
+    ],
+    "police": [
+        '"San Francisco" SFPD (robbery OR burglary OR vehicle theft OR assault OR arrest) neighborhood when:21d',
+        '"San Francisco" (police OR SFPD) neighborhood investigation arrest public safety when:30d',
+    ],
+}
+
+
+def _better_target_query(edition, story):
+    hood = str(edition.get("name") or "San Francisco").strip()
+    key = story.get("source")
+    records = edition.get("notable", {}).get(key, []) or []
+    metric = edition.get("metrics", {}).get(key, {}) or {}
+    first = records[0] if records else {}
+
+    if key == "businesses" and first:
+        name = str(first.get("title") or "").strip()
+        address = str(first.get("address") or "").strip()
+        anchors = " ".join(x for x in (f'"{name}"' if name else "", f'"{address}"' if address else "") if x)
+        return f'{anchors or f"\"{hood}\""} "San Francisco" (opening OR storefront OR restaurant OR retail OR business) when:90d'
+    if key == "permits" and first:
+        address = str(first.get("address") or "").strip()
+        permit = str(first.get("permit_number") or "").strip()
+        anchors = " ".join(x for x in (f'"{address}"' if address else "", f'"{permit}"' if permit else "") if x)
+        return f'{anchors or f"\"{hood}\""} "San Francisco" (housing OR development OR construction OR planning OR permit) when:120d'
+    if key == "service_requests":
+        categories = metric.get("categories") or []
+        category = str(categories[0].get("display_category") or "city services") if categories else "city services"
+        address = str(first.get("address") or "").strip()
+        anchor = f'"{address}"' if address else f'"{hood}"'
+        return f'{anchor} "San Francisco" ({category}) (public works OR street OR park OR Muni OR neighborhood) when:90d'
+    if key == "police":
+        categories = metric.get("categories") or []
+        category = str(categories[0].get("display_category") or "police") if categories else "police"
+        intersection = str(first.get("address") or "").strip()
+        anchor = f'"{intersection}"' if intersection else f'"{hood}"'
+        return f'{anchor} "San Francisco" SFPD ({category}) when:60d'
+    return f'"{hood}" "San Francisco" (business OR housing OR transit OR school OR park OR culture OR street) when:90d'
+
+
+_news._target_query = _better_target_query
+
+
+def _better_neighborhood_query(neighborhood):
+    terms = _coverage.NEIGHBORHOOD_TERMS.get(neighborhood) or (neighborhood,)
+    quoted = " OR ".join(f'"{term}"' for term in terms[:4])
+    return (
+        f'({quoted}) "San Francisco" '
+        '(opening OR closing OR development OR housing OR transit OR school OR park OR restaurant OR business OR culture OR street OR project) '
+        'when:270d'
+    )
+
+
+_coverage._query = _better_neighborhood_query
+
 _original_fetch_recent = _news.NewsContextClient.fetch_recent
 _original_enrich_snapshot = _editorial.enrich_snapshot
 
@@ -190,7 +261,14 @@ _news.NewsContextClient.fetch_restaurant_reviews = _fetch_restaurant_news
 def _enrich_snapshot_with_local_reporting(snapshot, items, generated_at=None):
     result = _original_enrich_snapshot(snapshot, items, generated_at)
     now = generated_at or datetime.now(timezone.utc)
-    return _backfill_neighborhood_coverage(result, items, now)
+    result = _backfill_neighborhood_coverage(result, items, now)
+    try:
+        previous = SnapshotStore().load()
+    except Exception:
+        previous = None
+    result = _enrich_storytelling(result, previous, now)
+    result["live_digest"] = _build_live_digest(result, items, previous, now)
+    return result
 
 
 _editorial.enrich_snapshot = _enrich_snapshot_with_local_reporting
