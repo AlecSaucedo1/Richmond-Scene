@@ -18,21 +18,31 @@ def _norm(value: Any) -> str:
     return re.sub(r"[^A-Z0-9]+", " ", str(value or "").upper()).strip()
 
 
-def _point(value: Any) -> tuple[float, float] | None:
-    if isinstance(value, dict):
-        coords = value.get("coordinates")
-        if isinstance(coords, (list, tuple)) and len(coords) >= 2:
-            try:
-                lon, lat = float(coords[0]), float(coords[1])
-            except (TypeError, ValueError):
-                return None
-            if _valid_sf(lat, lon):
-                return lat, lon
-    return None
-
-
 def _valid_sf(lat: float, lon: float) -> bool:
     return 37.60 <= lat <= 37.86 and -122.56 <= lon <= -122.32
+
+
+def _point(value: Any) -> tuple[float, float] | None:
+    if not isinstance(value, dict):
+        return None
+    coords = value.get("coordinates")
+    if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+        try:
+            lon, lat = float(coords[0]), float(coords[1])
+        except (TypeError, ValueError):
+            pass
+        else:
+            if _valid_sf(lat, lon):
+                return lat, lon
+    lat_value = value.get("latitude") if value.get("latitude") is not None else value.get("lat")
+    lon_value = value.get("longitude") if value.get("longitude") is not None else value.get("lon")
+    if lon_value is None:
+        lon_value = value.get("long")
+    try:
+        lat, lon = float(lat_value), float(lon_value)
+    except (TypeError, ValueError):
+        return None
+    return (lat, lon) if _valid_sf(lat, lon) else None
 
 
 def _lat_lon(lat_value: Any, lon_value: Any) -> tuple[float, float] | None:
@@ -112,12 +122,12 @@ def _raw_indexes(raw_sources: list[dict]) -> tuple[
                 if coords and address:
                     businesses.setdefault(address, coords)
             elif key == "service_requests":
-                coords = _lat_lon(row.get("lat"), row.get("long"))
+                coords = _lat_lon(row.get("lat"), row.get("long")) or _point(row.get("point"))
                 address = _norm(row.get("address"))
                 if coords and address:
                     services.setdefault(address, coords)
             elif key == "police":
-                coords = _point(row.get("point"))
+                coords = _point(row.get("point")) or _lat_lon(row.get("latitude"), row.get("longitude"))
                 incident = _text(row.get("incident_number"), 40)
                 if coords and incident:
                     police.setdefault(incident, coords)
