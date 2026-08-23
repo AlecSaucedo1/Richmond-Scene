@@ -14,9 +14,14 @@ from . import nearby as _nearby
 from . import neighborhood_coverage as _coverage
 from . import news as _news
 from . import readability as _readability
+from . import recap_audio as _recap_audio
 from . import restaurant_news as _restaurant_news_module
+from .datasf import DataSFClient as _DataSFClient
 from .location_safety import safe_location_confidence as _safe_location_confidence
-from .map_activity import build_map_activity as _build_map_activity
+from .map_activity import (
+    build_map_activity as _build_map_activity,
+    enrich_context_signals as _enrich_context_signals,
+)
 from .neighborhood_coverage import (
     backfill_neighborhood_coverage as _backfill_neighborhood_coverage,
     fetch_neighborhood_news as _fetch_neighborhood_news,
@@ -311,3 +316,21 @@ def _enrich_snapshot_with_local_reporting(snapshot, items, generated_at=None):
 _editorial.enrich_snapshot = _enrich_snapshot_with_local_reporting
 
 _nearby._restaurant_review = _select_restaurant_story
+
+# App.py calls BulletinBriefAudioClient.generate only after real-estate and arts data
+# have been attached to the fresh snapshot. Use that stable point in the refresh flow
+# to add those optional mapped signals without making them part of the core DataSF
+# snapshot transaction. Failures are nonblocking; the public-record map remains intact.
+_map_datasf_client = _DataSFClient()
+_original_brief_generate = _recap_audio.BulletinBriefAudioClient.generate
+
+
+async def _brief_generate_with_map_context(self, snapshot):
+    try:
+        await _enrich_context_signals(snapshot, _map_datasf_client, datetime.now(timezone.utc))
+    except Exception as exc:
+        print(f"Optional map context enrichment failed: {type(exc).__name__}: {exc}", flush=True)
+    return await _original_brief_generate(self, snapshot)
+
+
+_recap_audio.BulletinBriefAudioClient.generate = _brief_generate_with_map_context
