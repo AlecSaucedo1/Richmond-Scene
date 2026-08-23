@@ -17,6 +17,14 @@
     if (Number.isNaN(date.getTime())) return '';
     return date.toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
   };
+  const labels = {
+    permits:'Development',
+    businesses:'Business',
+    service_requests:'City services',
+    police:'Public safety',
+    real_estate:'Real estate',
+    arts:'Arts & culture',
+  };
 
   let map = null;
   let snapshotStamp = '';
@@ -53,12 +61,13 @@
     return response.json();
   }
 
-  function pinIcon(L, category) {
+  function pinIcon(L, pin) {
+    const category = pin.category || 'other';
     return L.divIcon({
-      className: 'bulletin-map-marker',
+      className: `bulletin-map-marker${pin.highlight ? ' is-highlight' : ''}`,
       html: `<div class="bulletin-map-pin pin-${esc(category)}"></div>`,
-      iconSize: [24,24],
-      iconAnchor: [12,12],
+      iconSize: pin.highlight ? [28,28] : [22,22],
+      iconAnchor: pin.highlight ? [14,14] : [11,11],
       popupAnchor: [0,-12],
     });
   }
@@ -66,29 +75,52 @@
   function popup(pin) {
     const address = pin.address ? `<p>${esc(pin.address)}</p>` : '';
     const detail = pin.detail ? `<p>${esc(pin.detail)}</p>` : '';
-    return `<div class="map-popup"><span>${esc(pin.label || 'Current activity')}</span><strong>${esc(pin.title || 'Neighborhood activity')}</strong>${address}${detail}<a href="${safeHref(pin.href)}">Open the underlying beat →</a></div>`;
+    return `<div class="map-popup"><span>${esc(pin.label || labels[pin.category] || 'Current activity')}</span><strong>${esc(pin.title || 'Neighborhood activity')}</strong>${address}${detail}<a href="${safeHref(pin.href)}">Open the underlying beat →</a></div>`;
   }
 
   function sectionMarkup(edition, activity) {
     const pins = activity.pins || [];
     const categories = [...new Set(pins.map((pin) => pin.category).filter(Boolean))];
-    const labels = {permits:'Development', businesses:'Business', service_requests:'City services', police:'Public safety'};
+    const filters = categories.map((category) => {
+      const count = pins.filter((pin) => pin.category === category).length;
+      return `<button type="button" class="map-filter is-active" data-map-filter="${esc(category)}" aria-pressed="true"><span>${esc(labels[category] || category)}</span><b>${count}</b></button>`;
+    }).join('');
     const list = pins.map((pin, index) => `
-      <button type="button" class="map-activity-item" data-map-item="${index}" data-map-category="${esc(pin.category)}">
+      <button type="button" class="map-activity-item${pin.highlight ? ' is-highlight' : ''}" data-map-item="${index}" data-map-category="${esc(pin.category)}" data-highlight="${pin.highlight ? 'true' : 'false'}">
         <i class="map-list-mark ${esc(pin.category)}" aria-hidden="true"></i>
-        <span><span>${esc(pin.label || labels[pin.category] || 'Activity')}</span><strong>${esc(pin.title)}</strong><small>${esc(pin.detail || pin.address || '')}</small></span>
+        <span><span>${esc(pin.label || labels[pin.category] || 'Activity')}${pin.highlight ? ' · Highlight' : ''}</span><strong>${esc(pin.title)}</strong><small>${esc(pin.detail || pin.address || '')}</small></span>
       </button>`).join('');
-    const filters = categories.map((category) => `<button type="button" class="map-filter is-active" data-map-filter="${esc(category)}" aria-pressed="true">${esc(labels[category] || category)}</button>`).join('');
+
     return `
       <div class="neighborhood-map-head">
-        <div><p class="section-label">MAPPED ACTIVITY</p><h2>${esc(edition.name)} right now</h2><p>A street-level view of selected records driving this edition. The map redraws from the same refreshed public-record snapshot as the stories around it.</p></div>
+        <div><p class="section-label">MAPPED ACTIVITY</p><h2>${esc(edition.name)} right now</h2><p>Start with the strongest signals in this edition, then open the broader mapped layer to explore what else is happening block by block.</p></div>
         <span class="neighborhood-map-updated">${activity.updated_at ? `Updated ${esc(when(activity.updated_at))}` : 'Current edition'}</span>
       </div>
+      <div class="map-signal-summary" aria-label="Mapped activity summary">
+        <div><strong>${Number(activity.highlight_count || pins.filter((pin) => pin.highlight).length)}</strong><span>highlighted signals</span></div>
+        <div><strong>${pins.length}</strong><span>mapped signals available</span></div>
+        <div><strong>${categories.length}</strong><span>active beats</span></div>
+        <div><strong data-map-visible-count>${pins.filter((pin) => pin.highlight).length || pins.length}</strong><span>currently visible</span></div>
+      </div>
+      <div class="map-explorer-toolbar" aria-label="Map controls">
+        <div class="map-mode-switch" role="group" aria-label="Map signal density">
+          <button type="button" class="map-mode is-active" data-map-mode="highlights" aria-pressed="true">Highlights</button>
+          <button type="button" class="map-mode" data-map-mode="all" aria-pressed="false">All mapped signals</button>
+        </div>
+        <label class="map-search"><span>Search map</span><input type="search" inputmode="search" placeholder="Address, business, project…" data-map-search></label>
+        <button type="button" class="map-tool" data-map-fit>Fit active signals</button>
+        <button type="button" class="map-tool" data-map-reset>Reset filters</button>
+      </div>
+      <div class="map-legend" aria-label="Map filters">${filters}</div>
       <div class="neighborhood-map-layout">
         <div class="neighborhood-map-canvas" data-neighborhood-map aria-label="Map of highlighted activity in ${esc(edition.name)}"></div>
         <aside class="neighborhood-map-side">
-          ${filters ? `<div class="map-legend" aria-label="Map filters">${filters}</div>` : ''}
-          <div class="map-activity-list">${list || '<p class="map-empty">No highlighted records in the current source window have mappable coordinates yet.</p>'}</div>
+          <div class="map-signal-detail" data-map-detail aria-live="polite">
+            <span>SELECT A SIGNAL</span>
+            <strong>Explore the map or activity list</strong>
+            <p>Tap a pin to keep its details here while you compare nearby activity.</p>
+          </div>
+          <div class="map-activity-list" data-map-list>${list || '<p class="map-empty">No highlighted records in the current source window have mappable coordinates yet.</p>'}</div>
         </aside>
       </div>
       <p class="neighborhood-map-note">${esc(activity.source_note || 'Selected locations from current public records.')}</p>`;
@@ -106,10 +138,11 @@
     document.querySelector('.neighborhood-map-section')?.remove();
 
     const section = document.createElement('section');
-    section.className = 'neighborhood-map-section';
+    section.className = 'neighborhood-map-section neighborhood-map-top';
     section.innerHTML = sectionMarkup(edition, activity);
-    const anchor = document.querySelector('.quick-read') || document.querySelector('.neighborhood-front') || document.querySelector('.edition-heading');
-    anchor?.insertAdjacentElement('afterend', section);
+    const anchor = document.querySelector('.edition-heading');
+    if (anchor) anchor.insertAdjacentElement('afterend', section);
+    else document.querySelector('main')?.prepend(section);
 
     const canvas = section.querySelector('[data-neighborhood-map]');
     if (!canvas) return;
@@ -118,10 +151,18 @@
     try {
       L = await ensureLeaflet();
     } catch (_) {
-      canvas.innerHTML = '<div class="map-empty">Interactive map tiles are temporarily unavailable. The highlighted activity list remains current.</div>';
+      canvas.innerHTML = '<div class="map-empty">Interactive map tiles are temporarily unavailable. The activity list remains current.</div>';
       return;
     }
     if (!L) return;
+
+    const pins = activity.pins || [];
+    const state = {
+      mode: 'highlights',
+      categories: new Set(pins.map((pin) => pin.category).filter(Boolean)),
+      query: '',
+      selected: null,
+    };
 
     map = L.map(canvas, {scrollWheelZoom:false, zoomControl:true, attributionControl:true, preferCanvas:true});
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -130,53 +171,140 @@
     }).addTo(map);
 
     const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#9b1c20';
-    const bounds = L.latLngBounds([]);
+    const homeBounds = L.latLngBounds([]);
     if (activity.boundary) {
       try {
-        const outline = L.geoJSON(activity.boundary, {style:{color:accent, weight:2, opacity:.88, fillColor:accent, fillOpacity:.025, dashArray:'6 5'}}).addTo(map);
-        if (outline.getBounds?.().isValid()) bounds.extend(outline.getBounds());
+        const outline = L.geoJSON(activity.boundary, {style:{color:accent, weight:2, opacity:.9, fillColor:accent, fillOpacity:.025, dashArray:'6 5'}}).addTo(map);
+        if (outline.getBounds?.().isValid()) homeBounds.extend(outline.getBounds());
       } catch (_) {}
     }
 
-    const groups = new Map();
     const markers = [];
-    (activity.pins || []).forEach((pin, index) => {
+    pins.forEach((pin, index) => {
       const lat = Number(pin.lat);
       const lon = Number(pin.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-      const category = pin.category || 'other';
-      if (!groups.has(category)) groups.set(category, L.layerGroup().addTo(map));
-      const marker = L.marker([lat,lon], {icon:pinIcon(L, category), title:pin.title || pin.label || 'Bulletin activity'}).bindPopup(popup(pin), {maxWidth:300});
-      marker.addTo(groups.get(category));
+      const marker = L.marker([lat,lon], {icon:pinIcon(L, pin), title:pin.title || pin.label || 'Bulletin activity'}).bindPopup(popup(pin), {maxWidth:310});
+      marker.on('click', () => selectSignal(index, false));
       markers[index] = marker;
-      bounds.extend([lat,lon]);
+      homeBounds.extend([lat,lon]);
     });
 
-    if (bounds.isValid()) map.fitBounds(bounds.pad(.08), {maxZoom:16, padding:[18,18]});
-    else map.setView([37.7749,-122.4194], 12);
+    const searchable = (pin) => [pin.title, pin.detail, pin.address, pin.label, labels[pin.category]].filter(Boolean).join(' ').toLowerCase();
+    const isVisible = (pin) => {
+      if (!state.categories.has(pin.category)) return false;
+      if (state.mode === 'highlights' && !pin.highlight) return false;
+      if (state.query && !searchable(pin).includes(state.query)) return false;
+      return true;
+    };
+
+    function visibleIndexes() {
+      const result = [];
+      pins.forEach((pin, index) => { if (isVisible(pin) && markers[index]) result.push(index); });
+      return result;
+    }
+
+    function fitVisible() {
+      const indexes = visibleIndexes();
+      const bounds = L.latLngBounds([]);
+      indexes.forEach((index) => bounds.extend(markers[index].getLatLng()));
+      if (bounds.isValid()) map.fitBounds(bounds.pad(.12), {maxZoom:16, padding:[24,24]});
+      else if (homeBounds.isValid()) map.fitBounds(homeBounds.pad(.08), {maxZoom:15, padding:[20,20]});
+    }
+
+    function setDetail(index) {
+      const detail = section.querySelector('[data-map-detail]');
+      const pin = pins[index];
+      if (!detail || !pin) return;
+      detail.innerHTML = `<span>${esc(pin.label || labels[pin.category] || 'Mapped signal')}${pin.highlight ? ' · Highlight' : ''}</span><strong>${esc(pin.title || 'Neighborhood activity')}</strong>${pin.address ? `<small>${esc(pin.address)}</small>` : ''}<p>${esc(pin.detail || 'Current mapped activity from this edition.')}</p><a href="${safeHref(pin.href)}">Open related coverage →</a>`;
+    }
+
+    function selectSignal(index, pan=true) {
+      const marker = markers[index];
+      if (!marker) return;
+      state.selected = index;
+      section.querySelectorAll('[data-map-item]').forEach((item) => item.classList.toggle('is-selected', Number(item.dataset.mapItem) === index));
+      setDetail(index);
+      if (pan) map.panTo(marker.getLatLng(), {animate:true});
+      marker.openPopup();
+    }
+
+    function applyVisibility({fit=false}={}) {
+      let visible = 0;
+      pins.forEach((pin, index) => {
+        const marker = markers[index];
+        if (!marker) return;
+        const show = isVisible(pin);
+        const onMap = map.hasLayer(marker);
+        if (show && !onMap) marker.addTo(map);
+        if (!show && onMap) map.removeLayer(marker);
+        const item = section.querySelector(`[data-map-item="${index}"]`);
+        if (item) item.hidden = !show;
+        if (show) visible += 1;
+      });
+      const count = section.querySelector('[data-map-visible-count]');
+      if (count) count.textContent = String(visible);
+      if (state.selected !== null && !isVisible(pins[state.selected])) {
+        state.selected = null;
+        const detail = section.querySelector('[data-map-detail]');
+        if (detail) detail.innerHTML = '<span>FILTERED VIEW</span><strong>Select a visible signal</strong><p>The detail pane follows the active map filters.</p>';
+      }
+      if (fit) fitVisible();
+    }
 
     section.querySelectorAll('[data-map-item]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const marker = markers[Number(button.dataset.mapItem)];
-        if (!marker) return;
-        map.panTo(marker.getLatLng(), {animate:true});
-        marker.openPopup();
-      });
+      button.addEventListener('click', () => selectSignal(Number(button.dataset.mapItem)));
     });
 
     section.querySelectorAll('[data-map-filter]').forEach((button) => {
       button.addEventListener('click', () => {
         const category = button.dataset.mapFilter;
-        const group = groups.get(category);
-        if (!group) return;
-        const active = button.classList.toggle('is-active');
+        if (!category) return;
+        if (state.categories.has(category)) state.categories.delete(category); else state.categories.add(category);
+        const active = state.categories.has(category);
+        button.classList.toggle('is-active', active);
         button.setAttribute('aria-pressed', String(active));
-        if (active) group.addTo(map); else map.removeLayer(group);
-        section.querySelectorAll(`[data-map-category="${CSS.escape(category)}"]`).forEach((item) => { item.hidden = !active; });
+        applyVisibility({fit:true});
       });
     });
 
-    setTimeout(() => map?.invalidateSize(), 80);
+    section.querySelectorAll('[data-map-mode]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.mode = button.dataset.mapMode === 'all' ? 'all' : 'highlights';
+        section.querySelectorAll('[data-map-mode]').forEach((item) => {
+          const active = item === button;
+          item.classList.toggle('is-active', active);
+          item.setAttribute('aria-pressed', String(active));
+        });
+        applyVisibility({fit:true});
+      });
+    });
+
+    const search = section.querySelector('[data-map-search]');
+    search?.addEventListener('input', () => {
+      state.query = String(search.value || '').trim().toLowerCase();
+      applyVisibility({fit:false});
+    });
+
+    section.querySelector('[data-map-fit]')?.addEventListener('click', fitVisible);
+    section.querySelector('[data-map-reset]')?.addEventListener('click', () => {
+      state.mode = 'highlights';
+      state.query = '';
+      state.categories = new Set(pins.map((pin) => pin.category).filter(Boolean));
+      if (search) search.value = '';
+      section.querySelectorAll('[data-map-filter]').forEach((button) => { button.classList.add('is-active'); button.setAttribute('aria-pressed','true'); });
+      section.querySelectorAll('[data-map-mode]').forEach((button) => {
+        const active = button.dataset.mapMode === 'highlights';
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+      applyVisibility({fit:true});
+    });
+
+    applyVisibility({fit:true});
+    const firstHighlight = pins.findIndex((pin, index) => pin.highlight && markers[index]);
+    if (firstHighlight >= 0) setDetail(firstHighlight);
+    setTimeout(() => map?.invalidateSize(), 100);
   }
 
   async function refresh() {
