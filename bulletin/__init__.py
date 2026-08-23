@@ -16,6 +16,7 @@ from . import news as _news
 from . import readability as _readability
 from . import restaurant_news as _restaurant_news_module
 from .location_safety import safe_location_confidence as _safe_location_confidence
+from .map_activity import build_map_activity as _build_map_activity
 from .neighborhood_coverage import (
     backfill_neighborhood_coverage as _backfill_neighborhood_coverage,
     fetch_neighborhood_news as _fetch_neighborhood_news,
@@ -140,6 +141,7 @@ def _build_snapshot_with_source_dates(raw_sources, generated_at):
             snapshot.get("editions") or {},
             "neighborhoods_analysis_boundaries",
         )
+    snapshot = _build_map_activity(snapshot, raw_sources, generated_at)
     return snapshot
 
 
