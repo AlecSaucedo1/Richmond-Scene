@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -11,6 +12,8 @@ from .config import SourceConfig
 
 
 PERMIT_CONTACTS_DATASET_ID = "3pee-9qhc"
+ADDRESS_DATASET_ID = "5mjj-njit"
+NEIGHBORHOOD_BOUNDARY_DATASET_ID = "j2bu-swwd"
 
 
 class DataSFClient:
@@ -64,6 +67,35 @@ class DataSFClient:
         suffix = "T23:59:59" if end else "T00:00:00"
         return day.isoformat() + suffix
 
+    @staticmethod
+    def _permit_address(row: dict[str, Any]) -> str:
+        number = "".join(
+            part for part in (
+                str(row.get("street_number") or "").strip(),
+                str(row.get("street_number_suffix") or "").strip(),
+            ) if part
+        )
+        return " ".join(
+            part for part in (
+                number,
+                str(row.get("street_name") or "").strip(),
+                str(row.get("street_suffix") or "").strip(),
+            ) if part
+        ).strip()
+
+    @staticmethod
+    def _norm_address(value: Any) -> str:
+        return re.sub(r"[^A-Z0-9]+", " ", str(value or "").upper()).strip()
+
+    @staticmethod
+    def _unit_count(value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+
     async def latest_date(self, config: SourceConfig, today: date) -> date:
         params = {
             "$select": f"max({config.date_field}) as latest",
@@ -80,12 +112,7 @@ class DataSFClient:
         return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).date()
 
     async def police_source_dates(self, config: SourceConfig, today: date) -> dict[str, str | None]:
-        """Return SFPD report-filed and incident-occurrence maxima separately.
-
-        SFPD open data can publish a newly approved report whose underlying incident
-        occurred several days earlier. Exposing both dates lets the Bulletin distinguish
-        upstream publication lag from an ingestion problem.
-        """
+        """Return SFPD report-filed and incident-occurrence maxima separately."""
         if config.key != "police":
             return {}
         params = {
@@ -142,12 +169,7 @@ class DataSFClient:
         return await self._get(config.dataset_id, params)
 
     async def permit_contacts(self, permit_numbers: list[str]) -> dict[str, list[dict[str, Any]]]:
-        """Fetch DBI contacts for recent building permits without changing permit counts.
-
-        Building Permits Contacts is a one-to-many permit contact table. Fetch it
-        separately and attach contacts to the already-deduplicated permit rows so a
-        permit with several contacts never inflates the Bulletin's filing metrics.
-        """
+        """Fetch DBI contacts for recent building permits without changing permit counts."""
         cleaned = list(dict.fromkeys(str(value or "").strip() for value in permit_numbers if str(value or "").strip()))
         if not cleaned:
             return {}
@@ -172,14 +194,77 @@ class DataSFClient:
                     contacts.setdefault(permit_number, []).append(row)
         return contacts
 
+    def _permit_map_candidates(self, rows: list[dict[str, Any]]) -> list[str]:
+        by_neighborhood: dict[str, list[tuple[float, str]]] = {}
+        for row in rows:
+            neighborhood = str(row.get("neighborhoods_analysis_boundaries") or "").strip()
+            address = self._permit_address(row)
+            if not neighborhood or not address:
+                continue
+            existing = self._unit_count(row.get("existing_units"))
+            proposed = self._unit_count(row.get("proposed_units"))
+            unit_delta = max((proposed - existing) if existing is not None and proposed is not None else 0, 0)
+            try:
+                cost = max(float(row.get("revised_cost") or 0), float(row.get("estimated_cost") or 0))
+            except (TypeError, ValueError):
+                cost = 0.0
+            score = unit_delta * 1_000_000_000 + cost
+            by_neighborhood.setdefault(neighborhood, []).append((score, address))
+
+        output: list[str] = []
+        for values in by_neighborhood.values():
+            values.sort(key=lambda item: item[0], reverse=True)
+            output.extend(address for _, address in values[:6])
+        return list(dict.fromkeys(output))
+
+    async def permit_map_points(self, rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        addresses = self._permit_map_candidates(rows)
+        if not addresses:
+            return {}
+        matches: dict[str, dict[str, Any]] = {}
+        chunk_size = 30
+        for start in range(0, len(addresses), chunk_size):
+            chunk = addresses[start : start + chunk_size]
+            clauses = []
+            for address in chunk:
+                escaped = address.upper().replace("'", "''")
+                clauses.append(f"upper(address) like '{escaped}%'")
+            found = await self._get(
+                ADDRESS_DATASET_ID,
+                {
+                    "$select": "address,point",
+                    "$where": " OR ".join(clauses),
+                    "$limit": "3000",
+                },
+            )
+            for row in found:
+                point = row.get("point")
+                if not point:
+                    continue
+                row_norm = self._norm_address(row.get("address"))
+                for requested in chunk:
+                    request_norm = self._norm_address(requested)
+                    if request_norm and row_norm.startswith(request_norm):
+                        matches.setdefault(request_norm, point)
+        return matches
+
+    async def neighborhood_boundaries(self) -> dict[str, Any]:
+        rows = await self._get(
+            NEIGHBORHOOD_BOUNDARY_DATASET_ID,
+            {"$select": "nhood,the_geom", "$limit": "100"},
+        )
+        return {
+            str(row.get("nhood") or "").strip(): row.get("the_geom")
+            for row in rows
+            if row.get("nhood") and row.get("the_geom")
+        }
+
     async def recent_records(self, config: SourceConfig, end_day: date, days: int = 7) -> list[dict[str, Any]]:
         if not config.notable_fields:
             return []
 
         start_day = end_day - timedelta(days=days - 1)
         page_size = 5000
-        # 311 routinely exceeds 5,000 records citywide in a seven-day window. Paginating
-        # prevents later-sorted neighborhoods from disappearing from the record-level ledger.
         max_rows = 25000 if config.key == "service_requests" else 10000
         rows: list[dict[str, Any]] = []
         offset = 0
@@ -204,26 +289,40 @@ class DataSFClient:
 
         if config.key == "permits" and rows:
             permit_numbers = [str(row.get("permit_number") or "").strip() for row in rows]
-            try:
-                by_permit = await self.permit_contacts(permit_numbers)
-            except Exception as exc:
-                # Permit filings remain useful even if the secondary contacts source is
-                # temporarily unavailable. The missing enrichment is explicit in the UI.
-                print(f"DBI permit-contact enrichment failed: {type(exc).__name__}: {exc}", flush=True)
+            contacts_result, points_result = await asyncio.gather(
+                self.permit_contacts(permit_numbers),
+                self.permit_map_points(rows),
+                return_exceptions=True,
+            )
+            if isinstance(contacts_result, BaseException):
+                print(f"DBI permit-contact enrichment failed: {type(contacts_result).__name__}: {contacts_result}", flush=True)
                 by_permit = {}
+            else:
+                by_permit = contacts_result
+            if isinstance(points_result, BaseException):
+                print(f"DBI permit-map enrichment failed: {type(points_result).__name__}: {points_result}", flush=True)
+                by_address = {}
+            else:
+                by_address = points_result
+
             for row in rows:
                 permit_number = str(row.get("permit_number") or "").strip()
                 row["_permit_contacts"] = by_permit.get(permit_number, [])
+                address_key = self._norm_address(self._permit_address(row))
+                if address_key in by_address:
+                    row["_map_point"] = by_address[address_key]
 
         return rows
 
     async def fetch_source(self, config: SourceConfig, today: date) -> dict[str, Any]:
         latest = await self.latest_date(config, today)
-        daily, categories, recent, source_dates = await asyncio.gather(
+        boundary_job = self.neighborhood_boundaries() if config.key == "permits" else asyncio.sleep(0, result={})
+        daily, categories, recent, source_dates, map_boundaries = await asyncio.gather(
             self.daily_counts(config, latest),
             self.category_daily_counts(config, latest),
             self.recent_records(config, latest),
             self.police_source_dates(config, today),
+            boundary_job,
         )
         return {
             "key": config.key,
@@ -232,4 +331,5 @@ class DataSFClient:
             "categories": categories,
             "recent": recent,
             "source_dates": source_dates,
+            "map_boundaries": map_boundaries,
         }
