@@ -249,10 +249,14 @@ class DataSFClient:
         return matches
 
     async def neighborhood_boundaries(self) -> dict[str, Any]:
-        rows = await self._get(
-            NEIGHBORHOOD_BOUNDARY_DATASET_ID,
-            {"$select": "nhood,the_geom", "$limit": "100"},
-        )
+        try:
+            rows = await self._get(
+                NEIGHBORHOOD_BOUNDARY_DATASET_ID,
+                {"$select": "nhood,the_geom", "$limit": "100"},
+            )
+        except Exception as exc:
+            print(f"Neighborhood-boundary map enrichment failed: {type(exc).__name__}: {exc}", flush=True)
+            return {}
         return {
             str(row.get("nhood") or "").strip(): row.get("the_geom")
             for row in rows
