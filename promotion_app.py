@@ -15,6 +15,7 @@ from bulletin.promotion import (
     notify_indexnow,
     robots_txt,
 )
+from bulletin.social_card import build_social_card_png
 
 
 app = core.app
@@ -70,6 +71,11 @@ async def neighborhood_feed(slug: str) -> Response:
     return Response(content, media_type="application/rss+xml; charset=utf-8", headers={"Cache-Control": "public, max-age=900"})
 
 
+@app.get("/social-card.png", include_in_schema=False)
+async def social_card() -> Response:
+    return Response(build_social_card_png(), media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.get(f"/{INDEXNOW_KEY}.txt", include_in_schema=False)
 async def indexnow_key() -> Response:
     return Response(INDEXNOW_KEY, media_type="text/plain; charset=utf-8", headers={"Cache-Control": "public, max-age=86400"})
@@ -82,5 +88,6 @@ async def promotion_status() -> JSONResponse:
         "public_base_url": PUBLIC_BASE_URL,
         "sitemap": f"{PUBLIC_BASE_URL}/sitemap.xml",
         "rss": f"{PUBLIC_BASE_URL}/feed.xml",
+        "social_card": f"{PUBLIC_BASE_URL}/social-card.png",
         "promotion": (core._snapshot or {}).get("promotion") or {},
     })
