@@ -13,6 +13,8 @@ services:
         value: https://data.sfgov.org/resource
       - key: PUBLIC_BASE_URL
         value: https://sf-neighborhood-bulletin.onrender.com
+      - key: INDEXNOW_KEY
+        value: 8f4f7d5a4d964687aaf4730f4ca67826
       - key: REFRESH_TIMEZONE
         value: America/Los_Angeles
       - key: MORNING_REFRESH_HOUR
