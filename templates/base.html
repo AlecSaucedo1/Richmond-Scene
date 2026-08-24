@@ -3,8 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A neighborhood newspaper assembled from San Francisco public data.">
+  {% if edition %}
+    {% set seo_title = edition.name ~ ' Bulletin — The San Francisco Bulletin' %}
+    {% set seo_description = 'Live neighborhood reporting for ' ~ edition.name ~ ': development, businesses, city services, public safety, real estate, arts, dining and local context from San Francisco public records.' %}
+    {% set feed_href = '/neighborhood/' ~ edition.slug ~ '/feed.xml' %}
+  {% else %}
+    {% set seo_title = 'The San Francisco Bulletin — Neighborhood Data News' %}
+    {% set seo_description = 'A living San Francisco neighborhood newspaper built from public records, local reporting, real estate, arts, dining and citywide civic signals, refreshed throughout the day.' %}
+    {% set feed_href = '/feed.xml' %}
+  {% endif %}
+  {% set canonical_url = request.url.scheme ~ '://' ~ request.url.netloc ~ request.url.path %}
+  {% set social_image = request.url.scheme ~ '://' ~ request.url.netloc ~ '/static/bulletin-social.png' %}
+  <meta name="description" content="{{ seo_description }}">
+  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
+  <link rel="canonical" href="{{ canonical_url }}">
+  <link rel="alternate" type="application/rss+xml" title="{% if edition %}{{ edition.name }} Bulletin{% else %}The San Francisco Bulletin{% endif %}" href="{{ feed_href }}">
+  <meta property="og:site_name" content="The San Francisco Bulletin">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ seo_title }}">
+  <meta property="og:description" content="{{ seo_description }}">
+  <meta property="og:url" content="{{ canonical_url }}">
+  <meta property="og:image" content="{{ social_image }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:alt" content="The San Francisco Bulletin — neighborhood editions from San Francisco's public record">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ seo_title }}">
+  <meta name="twitter:description" content="{{ seo_description }}">
+  <meta name="twitter:image" content="{{ social_image }}">
   <title>{% block title %}The San Francisco Bulletin{% endblock %}</title>
+  <script type="application/ld+json">{{ {'@context':'https://schema.org','@type':'NewsMediaOrganization','name':'The San Francisco Bulletin','url':request.url.scheme ~ '://' ~ request.url.netloc ~ '/','description':'Neighborhood editions assembled from San Francisco public records and local context.'} | tojson }}</script>
+  <script type="application/ld+json">{{ {'@context':'https://schema.org','@type':'WebSite','name':'The San Francisco Bulletin','url':request.url.scheme ~ '://' ~ request.url.netloc ~ '/'} | tojson }}</script>
   <link rel="stylesheet" href="/static/styles.css?v={{ version }}">
   <link rel="stylesheet" href="/static/rich.css?v={{ version }}">
   <link rel="stylesheet" href="/static/interactive.css?v={{ version }}">
@@ -19,6 +49,7 @@
   <link rel="stylesheet" href="/static/dining.css?v={{ version }}-dining1">
   <link rel="stylesheet" href="/static/arts.css?v={{ version }}-arts1">
   <link rel="stylesheet" href="/static/recap.css?v={{ version }}-recap2">
+  <link rel="stylesheet" href="/static/promotion.css?v={{ version }}-growth1">
   <link rel="stylesheet" href="/static/freshness.css?v={{ version }}">
   <script src="/static/app.js?v={{ version }}" defer></script>
   <script src="/static/editorial.js?v={{ version }}-color1" defer></script>
@@ -32,6 +63,7 @@
   <script src="/static/dining.js?v={{ version }}-dining2" defer></script>
   <script src="/static/arts.js?v={{ version }}-arts1" defer></script>
   <script src="/static/recap.js?v={{ version }}-recap2" defer></script>
+  <script src="/static/promotion.js?v={{ version }}-growth1" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -60,9 +92,17 @@
       </div>
       <p class="recap-transcript" data-recap-transcript hidden></p>
     </section>
+    <section class="audience-rail" aria-label="Follow and share The San Francisco Bulletin">
+      <div class="audience-rail-copy"><strong>Make the Bulletin part of your SF routine</strong><span>Fresh neighborhood signals twice daily. Follow it, subscribe, or send an edition to a neighbor.</span></div>
+      <div class="audience-actions">
+        <a class="audience-action primary" href="https://www.google.com/preferences/source?q={{ request.url.netloc }}" target="_blank" rel="noopener noreferrer">Preferred source on Google ↗</a>
+        <a class="audience-action" href="{{ feed_href }}" type="application/rss+xml">Follow RSS</a>
+        <button class="audience-action" type="button" data-page-share data-share-title="{{ seo_title }}">Share {% if edition %}this edition{% else %}the Bulletin{% endif %}</button>
+      </div>
+    </section>
     {% endif %}
   </header>
   <main>{% block content %}{% endblock %}</main>
-  <footer class="site-footer"><strong>The San Francisco Bulletin</strong><p>Automated neighborhood reporting from official DataSF records, recent independent reporting, official arts calendars, public transaction listings and sourced commercial-sale reporting. Counts and sales records are descriptive; news matches and political-statement checks include scope and timeframe caveats.</p><p>v{{ version }}</p></footer>
+  <footer class="site-footer"><strong>The San Francisco Bulletin</strong><p>Automated neighborhood reporting from official DataSF records, recent independent reporting, official arts calendars, public transaction listings and sourced commercial-sale reporting. Counts and sales records are descriptive; news matches and political-statement checks include scope and timeframe caveats.</p><p><a href="/feed.xml">RSS</a> · <a href="/sitemap.xml">Sitemap</a> · <a href="https://www.google.com/preferences/source?q={{ request.url.netloc }}" target="_blank" rel="noopener noreferrer">Add as a preferred source on Google</a></p><p>v{{ version }}</p></footer>
 </body>
 </html>
