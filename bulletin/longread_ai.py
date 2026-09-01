@@ -194,3 +194,143 @@ def _parse_json(text: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("Long-read response was not a JSON object")
     return value
+
+def _normalize(item: dict[str, Any], slug: str, day: str, model: str) -> dict[str, Any] | None:
+    body = [_text(p, 2200) for p in (item.get("body") or []) if _text(p, 30)]
+    headline = _text(item.get("headline"), 210)
+    dek = _text(item.get("dek"), 460)
+    thesis = _text(item.get("thesis"), 460)
+    outlook = _text(item.get("outlook"), 900)
+    if not headline or not dek or not thesis or len(body) < 5:
+        return None
+    watchlist = []
+    for row in (item.get("watchlist") or [])[:6]:
+        if isinstance(row, dict):
+            signal = _text(row.get("signal"), 220)
+            meaning = _text(row.get("would_mean"), 320)
+        else:
+            signal, meaning = _text(row, 220), ""
+        if signal:
+            watchlist.append({"signal": signal, "would_mean": meaning})
+    connections = []
+    for row in (item.get("connections") or [])[:7]:
+        if not isinstance(row, dict):
+            continue
+        interpretation = _text(row.get("interpretation"), 420)
+        if interpretation:
+            connections.append({
+                "signal_a": _text(row.get("signal_a"), 120),
+                "signal_b": _text(row.get("signal_b"), 120),
+                "interpretation": interpretation,
+                "confidence": row.get("confidence") if row.get("confidence") in {"high","medium","low"} else "medium",
+            })
+    word_count = len((" ".join(body) + " " + outlook).split())
+    return {
+        "slug": slug,
+        "headline": headline,
+        "dek": dek,
+        "thesis": thesis,
+        "thesis_status": item.get("thesis_status") if item.get("thesis_status") in {"new","strengthened","weakened","changed","mixed"} else "new",
+        "body": body[:14],
+        "connections": connections,
+        "outlook": outlook,
+        "watchlist": watchlist,
+        "signals_connected": [_text(x,120) for x in (item.get("signals_connected") or [])[:10] if _text(x,5)],
+        "confidence": item.get("confidence") if item.get("confidence") in {"high","medium","low"} else "medium",
+        "uncertainties": [_text(x,320) for x in (item.get("uncertainties") or [])[:6] if _text(x,10)],
+        "generated_for": day,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "word_count": word_count,
+        "reading_minutes": max(4, math.ceil(word_count / 210)),
+        "method": "gpt-5.6-neighborhood-analysis",
+        "model": model,
+    }
+
+class IntelligentLongReadClient:
+    def __init__(self) -> None:
+        self.api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        self.model = os.getenv("BULLETIN_LONGREAD_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+        self.timeout = float(os.getenv("BULLETIN_LONGREAD_TIMEOUT_SECONDS", "90"))
+        self.concurrency = max(1, min(8, int(os.getenv("BULLETIN_LONGREAD_CONCURRENCY", "5"))))
+        self.max_output_tokens = max(2500, min(9000, int(os.getenv("BULLETIN_LONGREAD_MAX_OUTPUT_TOKENS", "5000"))))
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.api_key)
+
+    async def generate_one(self, packet: dict[str, Any]) -> dict[str, Any]:
+        body = {
+            "model": self.model,
+            "instructions": EDITORIAL_INSTRUCTIONS,
+            "input": "Analyze this neighborhood evidence packet and return the requested JSON object:\n\n" + json.dumps(packet, ensure_ascii=False, separators=(",", ":")),
+            "max_output_tokens": self.max_output_tokens,
+        }
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        last_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+                    response = await client.post(RESPONSES_URL, headers=headers, json=body)
+                if response.status_code == 429 or response.status_code >= 500:
+                    if attempt == 0:
+                        await asyncio.sleep(1.25)
+                        continue
+                response.raise_for_status()
+                return _parse_json(_extract_output_text(response.json()))
+            except Exception as exc:
+                last_error = exc
+                if attempt == 0:
+                    await asyncio.sleep(0.75)
+        raise RuntimeError(str(last_error or "Long-read generation failed"))
+
+    async def enrich(self, snapshot: dict[str, Any], previous_snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+        day = datetime.now(PACIFIC).date().isoformat()
+        previous_reads = (previous_snapshot or {}).get("long_reads") or {}
+        previous_meta = (previous_snapshot or {}).get("long_read_meta") or {}
+        if previous_reads and previous_meta.get("generated_for") == day:
+            snapshot["long_reads"] = previous_reads
+            snapshot["long_read_meta"] = {**previous_meta, "reused_at": datetime.now(timezone.utc).isoformat(), "reused_for_same_day": True}
+            return snapshot
+
+        editions = snapshot.get("editions") or {}
+        semaphore = asyncio.Semaphore(self.concurrency)
+        generated: dict[str, dict[str, Any]] = {}
+        errors: dict[str, str] = {}
+
+        async def run(slug: str, edition: dict[str, Any]) -> None:
+            fallback = build_long_read(snapshot, slug, edition, day)
+            if not self.configured:
+                fallback["method"] = "deterministic-fallback"
+                fallback["generation_error"] = "OPENAI_API_KEY is not configured"
+                generated[slug] = fallback
+                return
+            packet = evidence_packet(snapshot, slug, edition, previous_snapshot, day)
+            async with semaphore:
+                try:
+                    raw = await self.generate_one(packet)
+                    normalized = _normalize(raw, slug, day, self.model)
+                    if normalized is None:
+                        raise ValueError("Response did not contain a complete analytical article")
+                    generated[slug] = normalized
+                except Exception as exc:
+                    errors[slug] = f"{type(exc).__name__}: {exc}"
+                    fallback["method"] = "deterministic-fallback"
+                    fallback["generation_error"] = errors[slug]
+                    generated[slug] = fallback
+
+        await asyncio.gather(*(run(slug, edition) for slug, edition in editions.items()))
+        intelligent_count = sum(1 for x in generated.values() if x.get("method") == "gpt-5.6-neighborhood-analysis")
+        snapshot["long_reads"] = generated
+        snapshot["long_read_meta"] = {
+            "generated_for": day,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "neighborhood_count": len(generated),
+            "intelligent_count": intelligent_count,
+            "fallback_count": len(generated) - intelligent_count,
+            "configured": self.configured,
+            "model": self.model if self.configured else "deterministic-fallback",
+            "errors": errors,
+            "refresh_policy": "Generated once per America/Los_Angeles calendar day; later Bulletin refreshes reuse the day's analysis.",
+            "editorial_policy": "Each article selects its own thesis and structure from the neighborhood evidence packet, compares eight-week and city context, and states observable conditions that would strengthen or weaken the outlook.",
+        }
+        return snapshot
