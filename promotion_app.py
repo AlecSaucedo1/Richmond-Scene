@@ -16,17 +16,18 @@ from bulletin.promotion import (
     robots_txt,
 )
 from bulletin.social_card import build_social_card_png
-from bulletin.longread import build_daily_long_reads
+from bulletin.longread_ai import IntelligentLongReadClient
 
 
 app = core.app
 _original_refresh_snapshot = core.refresh_snapshot
+long_read_client = IntelligentLongReadClient()
 
 
 async def _refresh_with_promotion(reason: str = "manual") -> dict[str, Any]:
     previous = core._snapshot
     fresh = await _original_refresh_snapshot(reason)
-    fresh = build_daily_long_reads(fresh, previous)
+    fresh = await long_read_client.enrich(fresh, previous)
     result = await notify_indexnow(fresh)
     fresh["promotion"] = {
         "public_base_url": PUBLIC_BASE_URL,
