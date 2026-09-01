@@ -68,25 +68,70 @@
       <span>{{ long_read.generated_for }}</span>
       <span>{{ long_read.reading_minutes }} min read</span>
       <span>{{ long_read.word_count }} words</span>
-      <span>Refreshes daily</span>
+      <span>{{ long_read.confidence|default('medium') }} confidence</span>
     </div>
   </header>
   <div class="long-read-layout">
     <article class="long-read-copy">
-      {% for paragraph in long_read.body %}<p>{{ paragraph }}</p>{% endfor %}
+      {% if long_read.sections %}
+        {% for section in long_read.sections %}
+          <section class="long-read-section">
+            {% if section.heading %}<h3>{{ section.heading }}</h3>{% endif %}
+            {% for paragraph in section.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+          </section>
+        {% endfor %}
+      {% else %}
+        {% for paragraph in long_read.body %}<p>{{ paragraph }}</p>{% endfor %}
+      {% endif %}
+      {% if long_read.outlook %}
+      <section class="long-read-outlook">
+        <p class="long-read-kicker">OUTLOOK</p>
+        <p>{{ long_read.outlook }}</p>
+      </section>
+      {% endif %}
+      {% if long_read.connections %}
+      <section class="long-read-connections">
+        <p class="long-read-kicker">HOW THE SIGNALS CONNECT</p>
+        {% for connection in long_read.connections %}
+        <div class="long-read-connection">
+          <div><strong>{{ connection.signal_a }}</strong><span>↔</span><strong>{{ connection.signal_b }}</strong><em>{{ connection.confidence }} confidence</em></div>
+          <p>{{ connection.interpretation }}</p>
+        </div>
+        {% endfor %}
+      </section>
+      {% endif %}
       <div class="long-read-actions">
         <button type="button" class="action-link primary js-share" data-share-title="{{ long_read.headline }}" data-share-url="/neighborhood/{{ edition.slug }}#long-read">Share long read</button>
         <a class="action-link" href="#story-{{ edition.lead.source if edition.lead else 'permits' }}">Explore the evidence ↓</a>
       </div>
-      <p class="long-read-note">This synthesis connects records already published in the Bulletin. Connections are contextual, not claims of causation. Public-record caveats remain the same as the underlying neighborhood edition.</p>
+      <p class="long-read-note">This analysis is constrained to the Bulletin's published evidence. Connections are interpretations, not claims of causation; the underlying public-record caveats continue to apply.</p>
     </article>
     <aside class="long-read-side">
-      {% if long_read.thesis %}<div class="long-read-thesis"><span>The read</span><strong>{{ long_read.thesis }}</strong></div>{% endif %}
+      {% if long_read.thesis %}
+      <div class="long-read-thesis">
+        <span>The thesis · {{ long_read.thesis_status|default('new') }}</span>
+        <strong>{{ long_read.thesis }}</strong>
+      </div>
+      {% endif %}
       {% if long_read.watchlist %}
-      <div class="long-read-watch"><h3>What to watch next</h3><ol>{% for item in long_read.watchlist %}<li>{{ item }}</li>{% endfor %}</ol></div>
+      <div class="long-read-watch">
+        <h3>What would change the read</h3>
+        <ol>
+        {% for item in long_read.watchlist %}
+          {% if item is mapping %}
+          <li><strong>{{ item.signal }}</strong>{% if item.would_mean %}<span>{{ item.would_mean }}</span>{% endif %}</li>
+          {% else %}
+          <li>{{ item }}</li>
+          {% endif %}
+        {% endfor %}
+        </ol>
+      </div>
+      {% endif %}
+      {% if long_read.uncertainties %}
+      <div class="long-read-uncertainties"><h3>Uncertainties</h3><ul>{% for item in long_read.uncertainties %}<li>{{ item }}</li>{% endfor %}</ul></div>
       {% endif %}
       {% if long_read.signals_connected %}
-      <div class="long-read-signals"><h3>Signals connected</h3><div class="long-read-signal-list">{% for item in long_read.signals_connected %}<span>{{ item }}</span>{% endfor %}</div></div>
+      <div class="long-read-signals"><h3>Signals used</h3><div class="long-read-signal-list">{% for item in long_read.signals_connected %}<span>{{ item }}</span>{% endfor %}</div></div>
       {% endif %}
     </aside>
   </div>
