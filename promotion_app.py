@@ -16,6 +16,7 @@ from bulletin.promotion import (
     robots_txt,
 )
 from bulletin.social_card import build_social_card_png
+from bulletin.longread import build_daily_long_reads
 
 
 app = core.app
@@ -23,7 +24,9 @@ _original_refresh_snapshot = core.refresh_snapshot
 
 
 async def _refresh_with_promotion(reason: str = "manual") -> dict[str, Any]:
+    previous = core._snapshot
     fresh = await _original_refresh_snapshot(reason)
+    fresh = build_daily_long_reads(fresh, previous)
     result = await notify_indexnow(fresh)
     fresh["promotion"] = {
         "public_base_url": PUBLIC_BASE_URL,
@@ -89,5 +92,6 @@ async def promotion_status() -> JSONResponse:
         "sitemap": f"{PUBLIC_BASE_URL}/sitemap.xml",
         "rss": f"{PUBLIC_BASE_URL}/feed.xml",
         "social_card": f"{PUBLIC_BASE_URL}/social-card.png",
+        "long_read_meta": (core._snapshot or {}).get("long_read_meta") or {},
         "promotion": (core._snapshot or {}).get("promotion") or {},
     })
