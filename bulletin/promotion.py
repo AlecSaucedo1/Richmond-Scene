@@ -125,6 +125,17 @@ def build_neighborhood_feed(snapshot: dict | None, slug: str) -> str | None:
         return None
     generated = snapshot.get("generated_at")
     items = []
+    long_read = (snapshot.get("long_reads") or {}).get(slug) or {}
+    if long_read:
+        long_link = f"{PUBLIC_BASE_URL}/neighborhood/{slug}#long-read"
+        items.append(_rss_item(
+            long_read.get("headline") or f"{edition.get('name')} daily long read",
+            long_read.get("dek") or "Daily synthesis connecting this neighborhood's current Bulletin signals.",
+            long_link,
+            long_link + "#" + str(long_read.get("generated_for") or ""),
+            long_read.get("generated_at") or generated,
+            "Daily long read",
+        ))
     for story in (edition.get("stories") or [])[:12]:
         source = story.get("source") or ""
         link = f"{PUBLIC_BASE_URL}/neighborhood/{slug}#story-{source}"
