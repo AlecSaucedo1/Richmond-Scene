@@ -22,3 +22,20 @@
 .long-read-note{margin-top:18px;color:var(--muted);font:10px/1.5 Arial,sans-serif}
 @media(max-width:900px){.long-read-head,.long-read-layout{grid-template-columns:1fr}.long-read-meta{max-width:520px}.long-read-side{position:static}.long-read-copy{max-width:none}}
 @media(max-width:600px){.neighborhood-long-read{padding-top:26px}.long-read-head h2{font-size:40px}.long-read-dek{font-size:18px}.long-read-meta{grid-template-columns:1fr}.long-read-copy p{font-size:17px;line-height:1.65}.long-read-copy p:first-child:first-letter{font-size:58px}}
+.long-read-section{margin:0 0 26px}
+.long-read-section h3{margin:30px 0 12px;padding-top:14px;border-top:1px solid var(--rule);font-size:26px;line-height:1.08}
+.long-read-section:first-child h3{margin-top:0}
+.long-read-outlook{margin:34px 0 28px;padding:22px 24px;border-left:5px solid var(--accent);background:var(--deep)}
+.long-read-outlook p:last-child{margin-bottom:0;font-size:19px;line-height:1.62}
+.long-read-connections{margin:30px 0;padding-top:18px;border-top:4px double var(--ink)}
+.long-read-connection{padding:15px 0;border-bottom:1px solid var(--rule)}
+.long-read-connection>div{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font:12px Arial,sans-serif}
+.long-read-connection>div span{color:var(--accent);font-weight:900}
+.long-read-connection>div em{margin-left:auto;color:var(--muted);font:800 9px Arial,sans-serif;text-transform:uppercase;letter-spacing:.06em}
+.long-read-connection p{margin:8px 0 0;font:13px/1.55 Arial,sans-serif;color:#36342e}
+.long-read-watch li strong{display:block;margin-bottom:3px}
+.long-read-watch li span{display:block;color:var(--muted);font:11px/1.45 Arial,sans-serif}
+.long-read-uncertainties{padding:18px 0;border-bottom:1px solid var(--rule)}
+.long-read-uncertainties h3{display:block;margin:0 0 7px;color:var(--accent);font:800 9px Arial,sans-serif;text-transform:uppercase;letter-spacing:.1em}
+.long-read-uncertainties ul{margin:0;padding-left:18px}
+.long-read-uncertainties li{margin:0 0 8px;color:var(--muted);font:11px/1.45 Arial,sans-serif}
