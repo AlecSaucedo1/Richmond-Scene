@@ -309,6 +309,7 @@ def build_long_read(snapshot: dict, slug: str, edition: dict, day: str) -> dict:
         "slug": slug,
         "headline": _headline(edition, day),
         "dek": f"A once-daily synthesis connecting the records, market participants and local context shaping {edition.get('name')} now.",
+        "thesis": "The important question is whether the same addresses, categories and market participants keep resurfacing across otherwise separate neighborhood systems.",
         "body": paragraphs,
         "watchlist": watchlist,
         "signals_connected": signals[:8],
