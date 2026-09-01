@@ -35,6 +35,14 @@ services:
         value: mp3
       - key: BULLETIN_TTS_TIMEOUT_SECONDS
         value: "60"
+      - key: BULLETIN_LONGREAD_MODEL
+        value: gpt-5.6-terra
+      - key: BULLETIN_LONGREAD_TIMEOUT_SECONDS
+        value: "90"
+      - key: BULLETIN_LONGREAD_CONCURRENCY
+        value: "5"
+      - key: BULLETIN_LONGREAD_MAX_OUTPUT_TOKENS
+        value: "5000"
       - key: DATASF_APP_TOKEN
         sync: false
       - key: OPENAI_API_KEY
