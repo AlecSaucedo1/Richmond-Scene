@@ -97,3 +97,100 @@ def _record(item: dict[str, Any]) -> dict[str, Any]:
         if value not in (None, "", [], {}):
             out[key] = _text(value, 350) if isinstance(value, str) else value
     return out
+
+def _news_context(edition: dict[str, Any]) -> list[dict[str, Any]]:
+    return [{
+        "title": _text(x.get("title"), 220),
+        "publisher": _text(x.get("publisher"), 90),
+        "published": x.get("published"),
+        "summary": _text(x.get("summary"), 420),
+        "match_reason": _text(x.get("match_reason"), 260),
+        "context_only": bool(x.get("context_only")),
+    } for x in ((edition.get("editorial") or {}).get("coverage") or [])[:5]]
+
+def _real_estate(snapshot: dict[str, Any], slug: str) -> dict[str, Any]:
+    desk = ((snapshot.get("real_estate") or {}).get("neighborhoods") or {}).get(slug) or {}
+    def rows(key: str) -> list[dict[str, Any]]:
+        return [{
+            "address": x.get("address_line") or x.get("address"),
+            "sale_price": x.get("sale_price"),
+            "price_per_sqft": x.get("price_per_sqft"),
+            "sale_date": x.get("sale_date"),
+            "property_type": x.get("property_type"),
+        } for x in (desk.get(key) or [])[:4]]
+    return {"residential": rows("residential"), "commercial": rows("commercial")}
+
+def _arts(snapshot: dict[str, Any], neighborhood: str) -> dict[str, Any]:
+    desk = ((snapshot.get("arts") or {}).get("neighborhoods") or {}).get(neighborhood) or {}
+    return {
+        "exhibitions": [{"title":_text(x.get("title"),180),"museum":x.get("museum"),"start_date":x.get("start_date"),"end_date":x.get("end_date"),"summary":_text(x.get("summary"),320)} for x in (desk.get("exhibitions") or [])[:3]],
+        "events": [{"title":_text(x.get("title"),180),"venue":x.get("venue"),"category":x.get("category"),"start_date":x.get("start_date"),"summary":_text(x.get("summary"),320)} for x in (desk.get("events") or [])[:3]],
+    }
+
+def _dining(snapshot: dict[str, Any], neighborhood: str) -> list[dict[str, Any]]:
+    rows = []
+    for x in snapshot.get("restaurant_reviews") or []:
+        if neighborhood not in (x.get("verified_neighborhoods") or []):
+            continue
+        rows.append({"title":_text(x.get("title"),200),"publisher":_text(x.get("publisher"),90),"published":x.get("published"),"summary":_text(x.get("summary"),360),"story_type":x.get("restaurant_story_type")})
+    rows.sort(key=lambda x: str(x.get("published") or ""), reverse=True)
+    return rows[:3]
+
+def _previous_analysis(previous_snapshot: dict[str, Any] | None, slug: str) -> dict[str, Any]:
+    item = (((previous_snapshot or {}).get("long_reads") or {}).get(slug) or {})
+    return {
+        "generated_for": item.get("generated_for"),
+        "headline": _text(item.get("headline"), 200),
+        "thesis": _text(item.get("thesis"), 420),
+        "thesis_status": item.get("thesis_status"),
+        "outlook": _text(item.get("outlook"), 650),
+        "watchlist": (item.get("watchlist") or [])[:5],
+    }
+
+def evidence_packet(snapshot: dict[str, Any], slug: str, edition: dict[str, Any], previous_snapshot: dict[str, Any] | None, day: str) -> dict[str, Any]:
+    metrics = edition.get("metrics") or {}
+    notable = edition.get("notable") or {}
+    participants = edition.get("permit_market_participants") or {}
+    editorial = edition.get("editorial") or {}
+    return {
+        "date": day,
+        "slug": slug,
+        "neighborhood": edition.get("name"),
+        "lead": {"headline":_text((edition.get("lead") or {}).get("headline"),200),"dek":_text((edition.get("lead") or {}).get("dek"),420),"beat":(edition.get("lead") or {}).get("source")},
+        "metrics": {key: _metric(metrics.get(key) or {}) for key in ("businesses","permits","service_requests","police")},
+        "notable_records": {key: [_record(x) for x in (notable.get(key) or [])[:6]] for key in ("businesses","permits","service_requests","police")},
+        "market_participants": {"owners":(participants.get("owners") or [])[:6],"general_contractors":(participants.get("general_contractors") or [])[:6],"source_note":_text(participants.get("note"),420)},
+        "real_estate": _real_estate(snapshot, slug),
+        "recent_reporting": _news_context(edition),
+        "dining": _dining(snapshot, edition.get("name") or ""),
+        "arts": _arts(snapshot, edition.get("name") or ""),
+        "existing_editorial": {"analysis":_text(editorial.get("analysis"),600),"watch":_text(editorial.get("watch"),400),"signal_reason":_text(editorial.get("signal_reason"),400)},
+        "previous_daily_analysis": _previous_analysis(previous_snapshot, slug),
+    }
+
+def _extract_output_text(payload: dict[str, Any]) -> str:
+    direct = payload.get("output_text")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    chunks: list[str] = []
+    for item in payload.get("output") or []:
+        for part in item.get("content") or []:
+            if part.get("type") == "output_text" and part.get("text"):
+                chunks.append(str(part["text"]))
+    return "\n".join(chunks).strip()
+
+def _parse_json(text: str) -> dict[str, Any]:
+    clean = text.strip()
+    if clean.startswith("```"):
+        clean = re.sub(r"^```(?:json)?\s*", "", clean)
+        clean = re.sub(r"\s*```$", "", clean)
+    try:
+        value = json.loads(clean)
+    except json.JSONDecodeError:
+        start, end = clean.find("{"), clean.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        value = json.loads(clean[start:end + 1])
+    if not isinstance(value, dict):
+        raise ValueError("Long-read response was not a JSON object")
+    return value
