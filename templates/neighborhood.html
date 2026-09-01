@@ -55,6 +55,44 @@
 </section>
 {% endif %}
 
+{% set long_read = snapshot.get('long_reads', {}).get(edition.slug) %}
+{% if long_read %}
+<section class="neighborhood-long-read" id="long-read">
+  <header class="long-read-head">
+    <div>
+      <p class="long-read-kicker">THE LONG READ · DAILY NEIGHBORHOOD ANALYSIS</p>
+      <h2>{{ long_read.headline }}</h2>
+      <p class="long-read-dek">{{ long_read.dek }}</p>
+    </div>
+    <div class="long-read-meta" aria-label="Long read details">
+      <span>{{ long_read.generated_for }}</span>
+      <span>{{ long_read.reading_minutes }} min read</span>
+      <span>{{ long_read.word_count }} words</span>
+      <span>Refreshes daily</span>
+    </div>
+  </header>
+  <div class="long-read-layout">
+    <article class="long-read-copy">
+      {% for paragraph in long_read.body %}<p>{{ paragraph }}</p>{% endfor %}
+      <div class="long-read-actions">
+        <button type="button" class="action-link primary js-share" data-share-title="{{ long_read.headline }}" data-share-url="/neighborhood/{{ edition.slug }}#long-read">Share long read</button>
+        <a class="action-link" href="#story-{{ edition.lead.source if edition.lead else 'permits' }}">Explore the evidence ↓</a>
+      </div>
+      <p class="long-read-note">This synthesis connects records already published in the Bulletin. Connections are contextual, not claims of causation. Public-record caveats remain the same as the underlying neighborhood edition.</p>
+    </article>
+    <aside class="long-read-side">
+      {% if long_read.thesis %}<div class="long-read-thesis"><span>The read</span><strong>{{ long_read.thesis }}</strong></div>{% endif %}
+      {% if long_read.watchlist %}
+      <div class="long-read-watch"><h3>What to watch next</h3><ol>{% for item in long_read.watchlist %}<li>{{ item }}</li>{% endfor %}</ol></div>
+      {% endif %}
+      {% if long_read.signals_connected %}
+      <div class="long-read-signals"><h3>Signals connected</h3><div class="long-read-signal-list">{% for item in long_read.signals_connected %}<span>{{ item }}</span>{% endfor %}</div></div>
+      {% endif %}
+    </aside>
+  </div>
+</section>
+{% endif %}
+
 <section class="section-rule"><h2>Around {{ edition.name }}</h2><p>Filter the neighborhood desk by beat, then expand a story for the evidence behind it.</p></section>
 <section class="story-toolbar" aria-label="Filter neighborhood stories">
   <div class="filter-chips" role="group" aria-label="Filter stories by beat">
