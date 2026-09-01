@@ -336,7 +336,10 @@ class IntelligentLongReadClient:
         day = datetime.now(PACIFIC).date().isoformat()
         previous_reads = (previous_snapshot or {}).get("long_reads") or {}
         previous_meta = (previous_snapshot or {}).get("long_read_meta") or {}
-        if previous_reads and previous_meta.get("generated_for") == day:
+        previous_intelligent = int(previous_meta.get("intelligent_count") or 0)
+        previous_total = int(previous_meta.get("neighborhood_count") or len(previous_reads))
+        fully_intelligent = bool(previous_reads) and previous_intelligent == previous_total and previous_total > 0
+        if previous_meta.get("generated_for") == day and fully_intelligent:
             snapshot["long_reads"] = previous_reads
             snapshot["long_read_meta"] = {**previous_meta, "reused_at": datetime.now(timezone.utc).isoformat(), "reused_for_same_day": True}
             return snapshot
