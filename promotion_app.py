@@ -27,6 +27,10 @@ long_read_client = IntelligentLongReadClient()
 async def _refresh_with_promotion(reason: str = "manual") -> dict[str, Any]:
     previous = core._snapshot
     fresh = await _original_refresh_snapshot(reason)
+    if previous:
+        # Keep the last completed analysis visible while the new daily batch is generated.
+        fresh["long_reads"] = (previous.get("long_reads") or {})
+        fresh["long_read_meta"] = (previous.get("long_read_meta") or {})
     fresh = await long_read_client.enrich(fresh, previous)
     result = await notify_indexnow(fresh)
     fresh["promotion"] = {
