@@ -76,6 +76,40 @@ def _text(value: Any, limit: int = 500) -> str:
     clean = " ".join(str(value or "").replace("\n", " ").split()).strip()
     return clean if len(clean) <= limit else clean[: limit - 1].rstrip(" ,;:-") + "…"
 
+def _trend_features(history: list[Any]) -> dict[str, Any]:
+    values = []
+    for value in history[-8:]:
+        try:
+            values.append(float(value))
+        except (TypeError, ValueError):
+            pass
+    if not values:
+        return {"shape": "no history"}
+    recent = values[-3:]
+    earlier = values[-6:-3] if len(values) >= 6 else values[:-3]
+    recent_avg = sum(recent) / len(recent)
+    earlier_avg = sum(earlier) / len(earlier) if earlier else recent_avg
+    delta = recent_avg - earlier_avg
+    spread = max(values) - min(values)
+    mean = sum(values) / len(values)
+    volatility = (spread / mean) if mean else 0.0
+    if abs(delta) < max(0.5, mean * 0.08):
+        shape = "roughly flat"
+    elif delta > 0:
+        shape = "rising over the recent three-week window"
+    else:
+        shape = "falling over the recent three-week window"
+    return {
+        "shape": shape,
+        "recent_3wk_avg": round(recent_avg, 2),
+        "prior_3wk_avg": round(earlier_avg, 2),
+        "recent_minus_prior": round(delta, 2),
+        "eight_week_min": min(values),
+        "eight_week_max": max(values),
+        "volatility_ratio": round(volatility, 2),
+    }
+
+
 def _metric(metric: dict[str, Any]) -> dict[str, Any]:
     return {
         "current_7d": metric.get("current"),
@@ -86,6 +120,7 @@ def _metric(metric: dict[str, Any]) -> dict[str, Any]:
         "city_neighborhoods": metric.get("city_total_neighborhoods"),
         "city_median": metric.get("city_median"),
         "eight_week_counts": list(metric.get("weekly_history") or [])[-8:],
+        "trend_features": _trend_features(list(metric.get("weekly_history") or [])),
         "top_categories": [{"name": x.get("display_category") or x.get("category"), "current": x.get("current"), "baseline": x.get("baseline"), "pct_change": x.get("pct_change")} for x in (metric.get("categories") or [])[:5]],
     }
 
