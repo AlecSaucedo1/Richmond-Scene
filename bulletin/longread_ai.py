@@ -62,7 +62,7 @@ RETURN THIS SHAPE
   "dek": "1-2 sentence standfirst",
   "thesis": "one concise thesis",
   "thesis_status": "new|strengthened|weakened|changed|mixed",
-  "body": ["paragraph", "paragraph"],
+  "sections": [{"heading":"model-chosen section heading","paragraphs":["paragraph","paragraph"]}],
   "connections": [{"signal_a":"...","signal_b":"...","interpretation":"...","confidence":"high|medium|low"}],
   "outlook": "forward-looking paragraph grounded in observable future signals",
   "watchlist": [{"signal":"specific thing to watch","would_mean":"what it would imply"}],
@@ -196,7 +196,21 @@ def _parse_json(text: str) -> dict[str, Any]:
     return value
 
 def _normalize(item: dict[str, Any], slug: str, day: str, model: str) -> dict[str, Any] | None:
-    body = [_text(p, 2200) for p in (item.get("body") or []) if _text(p, 30)]
+    sections = []
+    body = []
+    for section in (item.get("sections") or [])[:6]:
+        if not isinstance(section, dict):
+            continue
+        paragraphs = [_text(p, 2200) for p in (section.get("paragraphs") or []) if _text(p, 30)]
+        if not paragraphs:
+            continue
+        heading = _text(section.get("heading"), 120)
+        sections.append({"heading": heading, "paragraphs": paragraphs[:4]})
+        body.extend(paragraphs[:4])
+    if not body:
+        body = [_text(p, 2200) for p in (item.get("body") or []) if _text(p, 30)]
+        if body:
+            sections = [{"heading": "", "paragraphs": body}]
     headline = _text(item.get("headline"), 210)
     dek = _text(item.get("dek"), 460)
     thesis = _text(item.get("thesis"), 460)
