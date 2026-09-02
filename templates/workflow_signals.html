@@ -1,0 +1,84 @@
+{% set workflow = edition.get("workflow_signals", {}) %}
+{% if workflow %}
+<section class="workflow-section" id="workflow">
+  <div class="workflow-head">
+    <div><p class="section-label">FROM FILING TO ACTION</p><h2>What moved through the system</h2></div>
+    <p>These are event-date signals, not a funnel conversion of this week’s filings or reports. Approvals, issuances and closures can relate to records created earlier.</p>
+  </div>
+  <div class="workflow-grid">
+    {% set permit_flow = workflow.get("permits", {}) %}
+    {% if permit_flow %}
+    <article class="workflow-card">
+      <p class="section-label">Development pipeline</p>
+      <h3>Filed → approved → issued</h3>
+      <div class="workflow-metrics">
+        <div class="workflow-metric"><strong>{{ permit_flow.get("filed", {}).get("current", 0) }}</strong><span>Filed · 7 days</span></div>
+        <div class="workflow-metric"><strong>{{ permit_flow.get("approved", {}).get("current", 0) }}</strong><span>Approved · 7 days</span></div>
+        <div class="workflow-metric"><strong>{{ permit_flow.get("issued", {}).get("current", 0) }}</strong><span>Issued · 7 days</span></div>
+        <div class="workflow-metric"><strong>{{ permit_flow.get("completed", {}).get("current", 0) }}</strong><span>Completed · 7 days</span></div>
+      </div>
+      {% if permit_flow.get("issued_recent") %}
+      <p class="workflow-subhead">Recently issued</p>
+      <ul class="workflow-list">
+        {% for item in permit_flow.get("issued_recent", [])[:3] %}
+        <li><strong>{{ item.address or item.title }}</strong><small>{{ item.event }} {{ item.event_date }}{% if item.cost %} · ${{ "{:,.0f}".format(item.cost) }}{% endif %}{% if item.permit_number %} · Permit {{ item.permit_number }}{% endif %}</small></li>
+        {% endfor %}
+      </ul>
+      {% elif permit_flow.get("approved_recent") %}
+      <p class="workflow-subhead">Recently approved</p>
+      <ul class="workflow-list">
+        {% for item in permit_flow.get("approved_recent", [])[:3] %}
+        <li><strong>{{ item.address or item.title }}</strong><small>{{ item.event }} {{ item.event_date }}{% if item.cost %} · ${{ "{:,.0f}".format(item.cost) }}{% endif %}</small></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <p class="workflow-note">{{ permit_flow.methodology }}</p>
+    </article>
+    {% endif %}
+
+    {% set service_flow = workflow.get("service_requests", {}) %}
+    {% if service_flow %}
+    <article class="workflow-card">
+      <p class="section-label">311 case movement</p>
+      <h3>Opened, closed, still open</h3>
+      <div class="workflow-metrics">
+        <div class="workflow-metric"><strong>{{ service_flow.get("opened", {}).get("current", 0) }}</strong><span>Opened · 7 days</span></div>
+        <div class="workflow-metric"><strong>{{ service_flow.get("closed", {}).get("current", 0) }}</strong><span>Closed · 7 days</span></div>
+        <div class="workflow-metric"><strong>{{ service_flow.get("open_backlog", 0) }}</strong><span>Open backlog</span></div>
+        <div class="workflow-metric"><strong>{{ service_flow.get("closed", {}).get("baseline_week", 0) }}</strong><span>Recent avg. closed/wk</span></div>
+      </div>
+      {% if service_flow.get("closed_recent") %}
+      <p class="workflow-subhead">Recently closed</p>
+      <ul class="workflow-list">
+        {% for item in service_flow.get("closed_recent", [])[:3] %}
+        <li><strong>{{ item.title }}{% if item.address %} · {{ item.address }}{% endif %}</strong><small>Closed {{ item.closed_date }}{% if item.agency_responsible %} · {{ item.agency_responsible }}{% endif %}{% if item.status_notes %} · {{ item.status_notes }}{% endif %}</small></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <p class="workflow-note">{{ service_flow.methodology }}</p>
+    </article>
+    {% endif %}
+
+    {% set police_flow = workflow.get("police", {}) %}
+    {% if police_flow %}
+    <article class="workflow-card">
+      <p class="section-label">Police report status</p>
+      <h3>Resolution at filing & updates</h3>
+      <div class="workflow-metrics">
+        <div class="workflow-metric"><strong>{{ police_flow.get("reports_in_window", 0) }}</strong><span>Incident reports · 7 days</span></div>
+        <div class="workflow-metric"><strong>{{ police_flow.get("open_or_active_at_filing", 0) }}</strong><span>Open/active at filing</span></div>
+        <div class="workflow-metric"><strong>{{ police_flow.get("other_resolution_at_filing", 0) }}</strong><span>Other resolution at filing</span></div>
+        <div class="workflow-metric"><strong>{{ police_flow.get("supplemental_report_incidents", 0) }}</strong><span>Supplemental-report incidents</span></div>
+      </div>
+      {% if police_flow.get("resolution_mix") %}
+      <p class="workflow-subhead">Resolution mix</p>
+      {% for item in police_flow.get("resolution_mix", [])[:4] %}
+      <div class="workflow-resolution"><span>{{ item.resolution }}</span><strong>{{ item.count }}</strong></div>
+      {% endfor %}
+      {% endif %}
+      <p class="workflow-note">{{ police_flow.methodology }}</p>
+    </article>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
