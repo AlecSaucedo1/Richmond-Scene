@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from . import analysis as base
+from .permit_participants import contacts_for_row
 
 
 PERMIT_TREND_DATASET_ID = "f2jc-ivnc"
@@ -102,13 +103,23 @@ async def fetch_workflow_data(client, config, today: date, payload: dict[str, An
         daily = {}
         for field, result in zip(fields, results[:4]):
             daily[field] = [] if isinstance(result, BaseException) else result
+        approved_recent = [] if isinstance(results[4], BaseException) else results[4]
+        issued_recent = [] if isinstance(results[5], BaseException) else results[5]
+        lifecycle_rows = approved_recent + issued_recent
+        permit_numbers = [str(row.get("permit_number") or "").strip() for row in lifecycle_rows]
+        try:
+            contacts = await client.permit_contacts(permit_numbers)
+        except Exception:
+            contacts = {}
+        for row in lifecycle_rows:
+            row["_permit_contacts"] = contacts.get(str(row.get("permit_number") or "").strip(), [])
         return {
             "kind": "permit_lifecycle",
             "latest": {field: latest[field].isoformat() for field in fields},
             "daily": daily,
-            "approved_recent": [] if isinstance(results[3], BaseException) else results[3],
-            "issued_recent": [] if isinstance(results[4], BaseException) else results[4],
-            "methodology": "Approved, issued and completed counts are event-date cohorts from DBI's primary-address permit view; they are not conversions of the permits filed in the same seven-day window.",
+            "approved_recent": approved_recent,
+            "issued_recent": issued_recent,
+            "methodology": "Filed, approved, issued and completed counts are separate event-date cohorts from DBI's primary-address permit view; they are not same-week conversion stages.",
         }
 
     if config.key == "service_requests":
@@ -158,6 +169,9 @@ def _permit_movement_records(rows: list[dict[str, Any]], hood: str, event_field:
             cost = max(float(row.get("revised_cost") or 0), float(row.get("estimated_cost") or 0))
         except (TypeError, ValueError):
             cost = 0.0
+        contacts = contacts_for_row(row)
+        owners = contacts.get("owners") or []
+        contractors = contacts.get("general_contractors") or []
         out.append({
             "permit_number": permit,
             "title": _text(row.get("permit_type_definition") or "Building permit", 120),
@@ -172,6 +186,10 @@ def _permit_movement_records(rows: list[dict[str, Any]], hood: str, event_field:
             "event_date": _date(row.get(event_field)),
             "event": "Approved" if event_field == "approved_date" else "Issued",
             "cost": cost,
+            "owners": owners,
+            "general_contractors": contractors,
+            "owner": owners[0]["name"] if owners else "",
+            "general_contractor": contractors[0]["name"] if contractors else "",
         })
         if len(out) >= limit:
             break
