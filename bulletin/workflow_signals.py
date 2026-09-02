@@ -317,6 +317,29 @@ def enrich_workflow_signals(snapshot: dict[str, Any], raw_sources: list[dict[str
 
         edition["workflow_signals"] = workflow
 
+    editions = list((snapshot.get("editions") or {}).values())
+    def sum_current(group: str, key: str) -> int:
+        return sum(int((((edition.get("workflow_signals") or {}).get(group) or {}).get(key) or {}).get("current") or 0) for edition in editions)
+
+    snapshot["city_workflow_signals"] = {
+        "permits": {
+            "filed_7d": sum_current("permits", "filed"),
+            "approved_7d": sum_current("permits", "approved"),
+            "issued_7d": sum_current("permits", "issued"),
+            "completed_7d": sum_current("permits", "completed"),
+        },
+        "service_requests": {
+            "opened_7d": sum(int((edition.get("metrics") or {}).get("service_requests", {}).get("current") or 0) for edition in editions),
+            "closed_7d": sum_current("service_requests", "closed"),
+            "open_backlog": sum(int(((edition.get("workflow_signals") or {}).get("service_requests") or {}).get("open_backlog") or 0) for edition in editions),
+        },
+        "police": {
+            "incident_reports_7d": sum(int(((edition.get("workflow_signals") or {}).get("police") or {}).get("reports_in_window") or 0) for edition in editions),
+            "open_or_active_at_filing": sum(int(((edition.get("workflow_signals") or {}).get("police") or {}).get("open_or_active_at_filing") or 0) for edition in editions),
+            "supplemental_report_incidents": sum(int(((edition.get("workflow_signals") or {}).get("police") or {}).get("supplemental_report_incidents") or 0) for edition in editions),
+        },
+    }
+
     source_dates = snapshot.setdefault("source_dates", {})
     if permit_flow.get("latest"):
         permit_dates = source_dates.setdefault("permits", {})
