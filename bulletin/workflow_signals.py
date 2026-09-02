@@ -286,6 +286,18 @@ def enrich_workflow_signals(snapshot: dict[str, Any], raw_sources: list[dict[str
 
         edition["workflow_signals"] = workflow
 
+    source_dates = snapshot.setdefault("source_dates", {})
+    if permit_flow.get("latest"):
+        permit_dates = source_dates.setdefault("permits", {})
+        permit_dates.update({
+            "latest_filed": (permit_flow.get("latest") or {}).get("filed_date"),
+            "latest_approved": (permit_flow.get("latest") or {}).get("approved_date"),
+            "latest_issued": (permit_flow.get("latest") or {}).get("issued_date"),
+            "latest_completed": (permit_flow.get("latest") or {}).get("completed_date"),
+        })
+    if service_flow.get("latest_closed"):
+        source_dates.setdefault("service_requests", {})["latest_closed"] = service_flow.get("latest_closed")
+
     snapshot["workflow_methodology"] = {
         "permits": permit_flow.get("methodology"),
         "service_requests": service_flow.get("methodology"),
