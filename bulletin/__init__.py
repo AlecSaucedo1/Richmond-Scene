@@ -40,8 +40,24 @@ from .restaurant_news import (
 from .restaurant_validation import strict_verified_review_neighborhoods as _strict_verified_review_neighborhoods
 from .store import SnapshotStore
 from .storytelling import build_live_digest as _build_live_digest, enrich_storytelling as _enrich_storytelling
+from .workflow_signals import fetch_workflow_data as _fetch_workflow_data, enrich_workflow_signals as _enrich_workflow_signals
 
 _readability.readable_permit_scope = _readable_permit_scope
+
+_original_fetch_source = _DataSFClient.fetch_source
+
+async def _fetch_source_with_workflow(self, config, today):
+    payload = await _original_fetch_source(self, config, today)
+    if config.key in {"permits", "service_requests", "police"}:
+        try:
+            payload["workflow"] = await _fetch_workflow_data(self, config, today, payload)
+        except Exception as exc:
+            print(f"{config.key} workflow-signal enrichment failed: {type(exc).__name__}: {exc}", flush=True)
+            payload["workflow"] = {"error": f"{type(exc).__name__}: {exc}"}
+    return payload
+
+_DataSFClient.fetch_source = _fetch_source_with_workflow
+
 
 # Live Nation's canonical San Francisco Fillmore venue identifier occasionally differs
 # from older shared links. Normalize it here and keep two current major-venue events as
@@ -146,6 +162,7 @@ def _build_snapshot_with_source_dates(raw_sources, generated_at):
             snapshot.get("editions") or {},
             "neighborhoods_analysis_boundaries",
         )
+    snapshot = _enrich_workflow_signals(snapshot, raw_sources)
     snapshot = _build_map_activity(snapshot, raw_sources, generated_at)
     return snapshot
 
