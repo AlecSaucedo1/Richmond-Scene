@@ -16,6 +16,7 @@ from bulletin.longread import build_long_read
 PACIFIC = ZoneInfo("America/Los_Angeles")
 RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5.6-terra"
+ANALYSIS_VERSION = "3-lifecycle"
 
 EDITORIAL_INSTRUCTIONS = """You are the senior neighborhood analyst for The San Francisco Bulletin.
 
@@ -35,6 +36,9 @@ FACT RULES
 - Journalism, dining, arts and real-estate records can add context but do not prove why another signal moved.
 - Percent changes on small bases can be noisy. Use absolute counts, eight-week history and city rank.
 - If signals conflict, explain the tension rather than smoothing it away.
+- Permit filed, approved, issued and completed counts are separate event-date cohorts. Never divide same-week approved/issued counts by same-week filed counts and call that a conversion rate.
+- 311 opened and closed counts are separate event-date cohorts; cases closed this week may have been opened earlier. Open backlog is a current-state count.
+- SFPD Resolution is fixed at report filing; later changes appear through supplemental reports. Do not describe resolution mix as a live case-closure status.
 
 ANALYTICAL EXPECTATIONS
 1. Identify a central thesis unique to this neighborhood today.
@@ -195,6 +199,7 @@ def evidence_packet(snapshot: dict[str, Any], slug: str, edition: dict[str, Any]
         "metrics": {key: _metric(metrics.get(key) or {}) for key in ("businesses","permits","service_requests","police")},
         "notable_records": {key: [_record(x) for x in (notable.get(key) or [])[:6]] for key in ("businesses","permits","service_requests","police")},
         "market_participants": {"owners":(participants.get("owners") or [])[:6],"general_contractors":(participants.get("general_contractors") or [])[:6],"source_note":_text(participants.get("note"),420)},
+        "workflow_signals": edition.get("workflow_signals") or {},
         "real_estate": _real_estate(snapshot, slug),
         "recent_reporting": _news_context(edition),
         "dining": _dining(snapshot, edition.get("name") or ""),
@@ -292,6 +297,7 @@ def _normalize(item: dict[str, Any], slug: str, day: str, model: str) -> dict[st
         "word_count": word_count,
         "reading_minutes": max(4, math.ceil(word_count / 210)),
         "method": "gpt-5.6-neighborhood-analysis",
+        "analysis_version": ANALYSIS_VERSION,
         "model": model,
     }
 
@@ -338,7 +344,8 @@ class IntelligentLongReadClient:
         previous_meta = (previous_snapshot or {}).get("long_read_meta") or {}
         previous_intelligent = int(previous_meta.get("intelligent_count") or 0)
         previous_total = int(previous_meta.get("neighborhood_count") or len(previous_reads))
-        fully_intelligent = bool(previous_reads) and previous_intelligent == previous_total and previous_total > 0
+        prior_version = str(previous_meta.get("analysis_version") or "")
+        fully_intelligent = bool(previous_reads) and previous_intelligent == previous_total and previous_total > 0 and prior_version == ANALYSIS_VERSION
         if previous_meta.get("generated_for") == day and fully_intelligent:
             snapshot["long_reads"] = previous_reads
             snapshot["long_read_meta"] = {**previous_meta, "reused_at": datetime.now(timezone.utc).isoformat(), "reused_for_same_day": True}
@@ -381,6 +388,7 @@ class IntelligentLongReadClient:
             "fallback_count": len(generated) - intelligent_count,
             "configured": self.configured,
             "model": self.model if self.configured else "deterministic-fallback",
+            "analysis_version": ANALYSIS_VERSION,
             "errors": errors,
             "refresh_policy": "Generated once per America/Los_Angeles calendar day; later Bulletin refreshes reuse the day's analysis.",
             "editorial_policy": "Each article selects its own thesis and structure from the neighborhood evidence packet, compares eight-week and city context, and states observable conditions that would strengthen or weaken the outlook.",
