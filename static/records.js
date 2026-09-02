@@ -11,7 +11,14 @@
       ? `<ul class="record-context-list">${item.project_context.filter((part) => !/^Owner listed by DBI:|^General contractor listed by DBI:/i.test(part)).map((part) => `<li>${esc(part)}</li>`).join('')}</ul>`
       : '';
     const value = item.value_summary || (item.cost ? `Project value: ${money(item.cost)}` : '');
-    const meta = [item.filed_date ? `Filed ${item.filed_date}` : null, item.status_summary || item.status, item.permit_number ? `Permit ${item.permit_number}` : null].filter(Boolean);
+    const meta = [
+      item.filed_date ? `Filed ${item.filed_date}` : null,
+      item.approved_date ? `Approved ${item.approved_date}` : null,
+      item.issued_date ? `Issued ${item.issued_date}` : null,
+      item.completed_date ? `Completed ${item.completed_date}` : null,
+      item.status_summary || item.status,
+      item.permit_number ? `Permit ${item.permit_number}` : null,
+    ].filter(Boolean);
     const address = item.address || '';
     const owners = Array.isArray(item.owners) ? item.owners : [];
     const contractors = Array.isArray(item.general_contractors) ? item.general_contractors : [];
@@ -56,7 +63,7 @@
       item.reported_display ? `Reported ${item.reported_display}` : null,
       item.occurred_display ? `Occurred ${item.occurred_display}` : null,
       item.report_method || item.report_type || null,
-      item.status ? `Resolution: ${item.status}` : null,
+      item.status ? `Resolution at filing: ${item.status}` : null,
       item.incident_number ? `SFPD case ${item.incident_number}` : null,
     ].filter(Boolean);
     const related = Array.isArray(item.related_types) && item.related_types.length
@@ -74,7 +81,7 @@
         <p class="record-scope">${esc(item.description || "SFPD's public record does not provide a more specific plain-language incident description.")}</p>
         ${related}
         ${meta.length ? `<p class="record-meta">${esc(meta.join(' · '))}</p>` : ''}
-        <p class="record-source-classification">The Bulletin sorts this section by report filing date. Incident occurrence time is shown separately. Locations are the privacy-protected intersections published by SFPD.</p>
+        <p class="record-source-classification">The Bulletin sorts this section by report filing date. SFPD Resolution is fixed at the time of the report; later changes or updates are represented through supplemental reports. Incident occurrence time is shown separately. Locations are the privacy-protected intersections published by SFPD.</p>
         <div class="story-actions compact-actions">
           <a class="action-link" href="${sourceUrl(webQuery)}" target="_blank" rel="noopener noreferrer">Search case context ↗</a>
           <a class="action-link" href="${sourceUrl(newsQuery, true)}" target="_blank" rel="noopener noreferrer">Find coverage ↗</a>
