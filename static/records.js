@@ -90,6 +90,29 @@
     </details>`;
   };
 
+  const serviceCard = (item, neighborhood) => {
+    const dates = [
+      item.opened_date ? `Opened ${item.opened_date}` : null,
+      item.closed_date ? `Closed ${item.closed_date}` : null,
+      item.updated_date ? `Updated ${item.updated_date}` : null,
+      item.status ? `Status: ${item.status}` : null,
+    ].filter(Boolean);
+    const place = item.address || neighborhood;
+    const webQuery = `"${place}" San Francisco 311 ${item.case_id ? `"${item.case_id}"` : item.category || item.title || ''}`;
+    return `<details class="record-item record-details enhanced-record service-record">
+      <summary><span><strong>${esc(item.title || '311 service request')}</strong><small>${esc(item.address || item.category || neighborhood)}${item.status ? ` · ${esc(item.status)}` : ''}</small></span></summary>
+      <div class="record-body">
+        ${item.description ? `<p class="record-scope">${esc(item.description)}</p>` : ''}
+        ${dates.length ? `<p class="record-meta">${esc(dates.join(' · '))}</p>` : ''}
+        ${item.agency_responsible ? `<p class="record-value"><strong>Responsible agency:</strong> ${esc(item.agency_responsible)}</p>` : ''}
+        ${item.status_notes ? `<p class="record-source-classification">${esc(item.status_notes)}</p>` : ''}
+        <div class="story-actions compact-actions">
+          <a class="action-link" href="${sourceUrl(webQuery)}" target="_blank" rel="noopener noreferrer">Search case context ↗</a>
+          <a class="action-link" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place}, San Francisco`)}" target="_blank" rel="noopener noreferrer">Map location ↗</a>
+        </div>
+      </div>
+    </details>`;
+  };
   const renderGroup = (items, renderer, emptyText) => {
     if (!items.length) return `<p class="muted">${esc(emptyText)}</p>`;
     return items.slice(0, 5).map(renderer).join('');
@@ -106,10 +129,14 @@
     if (!ledger) return;
     const columns = ledger.querySelectorAll(':scope > div');
     const permits = edition?.notable?.permits || [];
+    const services = edition?.notable?.service_requests || [];
     const police = edition?.notable?.police || [];
 
     if (columns[1]) {
       columns[1].innerHTML = `<p class="section-label">Development & housing filings</p>${renderGroup(permits, (item) => permitCard(item, edition.name), 'No permit records in the current source window.')}`;
+    }
+    if (columns[2]) {
+      columns[2].innerHTML = `<p class="section-label">Recent 311 requests</p>${renderGroup(services, (item) => serviceCard(item, edition.name), 'No recent 311 records available for this edition.')}`;
     }
 
     let policeColumn = ledger.querySelector('[data-police-records]');
