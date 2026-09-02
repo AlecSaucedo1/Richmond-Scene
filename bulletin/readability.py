@@ -331,6 +331,10 @@ def _permit_records(cfg: SourceConfig, rows: list[dict[str, Any]], hood: str) ->
         estimated = base.num(r.get("estimated_cost"))
         revised = base.num(r.get("revised_cost"))
         filed_date = _date_label(r.get("filed_date"))
+        approved_date = _date_label(r.get("approved_date"))
+        issued_date = _date_label(r.get("issued_date"))
+        completed_date = _date_label(r.get("completed_date"))
+        last_activity_date = _date_label(r.get("last_permit_activity_date"))
         status_date = _date_label(r.get("status_date"))
         status = _sentence(r.get("status"))
 
@@ -370,6 +374,10 @@ def _permit_records(cfg: SourceConfig, rows: list[dict[str, Any]], hood: str) ->
             "status": status,
             "status_summary": status_summary,
             "filed_date": filed_date,
+            "approved_date": approved_date,
+            "issued_date": issued_date,
+            "completed_date": completed_date,
+            "last_activity_date": last_activity_date,
             "permit_number": base.text(r.get("permit_number"), 40),
             "permit_type": base.text(r.get("permit_type"), 20),
             "existing_units": existing_units,
@@ -402,6 +410,11 @@ def _service_records(cfg: SourceConfig, rows: list[dict[str, Any]], hood: str) -
             context.append(_sentence(details))
         if subtype and _lower(subtype) not in {_lower(title), _lower(service)} and not _lower(subtype).startswith("graffiti public") and not _lower(subtype).startswith("graffiti private"):
             context.append(f"Request type: {_sentence(subtype)}")
+        status_notes = base.text(r.get("status_notes"), 320)
+        agency = base.text(r.get("agency_responsible"), 140)
+        opened_date = _date_label(r.get("requested_datetime"))
+        closed_date = _date_label(r.get("closed_date"))
+        updated_date = _date_label(r.get("updated_datetime"))
         out.append({
             "title": title,
             "raw_title": subtype or service,
@@ -409,6 +422,12 @@ def _service_records(cfg: SourceConfig, rows: list[dict[str, Any]], hood: str) -
             "address": address,
             "description": base.text(" · ".join(dict.fromkeys(context)), 220),
             "status": base.text(r.get("status_description"), 40),
+            "status_notes": status_notes,
+            "agency_responsible": agency,
+            "opened_date": opened_date,
+            "closed_date": closed_date,
+            "updated_date": updated_date,
+            "case_id": base.text(r.get("service_request_id"), 40),
         })
         if len(out) == 8:
             break
