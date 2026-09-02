@@ -55,7 +55,7 @@
 </section>
 {% endif %}
 
-{% set long_read = snapshot.get('long_reads', {}).get(edition.slug) %}
+{% include "workflow_signals.html" %}\n\n{% set long_read = snapshot.get('long_reads', {}).get(edition.slug) %}
 {% if long_read %}
 <section class="neighborhood-long-read" id="long-read">
   <header class="long-read-head">
