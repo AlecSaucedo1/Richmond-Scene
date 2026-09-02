@@ -86,7 +86,7 @@ async def _311_open_backlog(client) -> list[dict[str, Any]]:
 
 async def fetch_workflow_data(client, config, today: date, payload: dict[str, Any]) -> dict[str, Any]:
     if config.key == "permits":
-        fields = ("approved_date", "issued_date", "completed_date")
+        fields = ("filed_date", "approved_date", "issued_date", "completed_date")
         latest_results = await asyncio.gather(*[_latest_field(client, PERMIT_TREND_DATASET_ID, config.neighborhood_field, field, today) for field in fields], return_exceptions=True)
         latest: dict[str, date] = {}
         for field, result in zip(fields, latest_results):
@@ -100,7 +100,7 @@ async def fetch_workflow_data(client, config, today: date, payload: dict[str, An
         ])
         results = await asyncio.gather(*jobs, return_exceptions=True)
         daily = {}
-        for field, result in zip(fields, results[:3]):
+        for field, result in zip(fields, results[:4]):
             daily[field] = [] if isinstance(result, BaseException) else result
         return {
             "kind": "permit_lifecycle",
@@ -251,7 +251,7 @@ def enrich_workflow_signals(snapshot: dict[str, Any], raw_sources: list[dict[str
 
         if permit_flow:
             permit_items = {}
-            for key, field in (("approved","approved_date"),("issued","issued_date"),("completed","completed_date")):
+            for key, field in (("filed","filed_date"),("approved","approved_date"),("issued","issued_date"),("completed","completed_date")):
                 end_raw = (permit_flow.get("latest") or {}).get(field)
                 if end_raw:
                     rows = [x for x in ((permit_flow.get("daily") or {}).get(field) or []) if str(x.get("neighborhood") or "").strip() == hood]
