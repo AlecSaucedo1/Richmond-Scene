@@ -46,7 +46,7 @@ async def _daily_by_field(client, dataset_id: str, neighborhood_field: str, fiel
     })
 
 
-async def _permit_recent_by_field(client, field: str, end_day: date, days: int = 7) -> list[dict[str, Any]]:
+async def _permit_recent_by_field(client, dataset_id: str, field: str, end_day: date, days: int = 7) -> list[dict[str, Any]]:
     start = end_day - timedelta(days=days - 1)
     select = ",".join((
         "permit_number","permit_type_definition","filed_date","approved_date","issued_date","completed_date",
@@ -54,7 +54,7 @@ async def _permit_recent_by_field(client, field: str, end_day: date, days: int =
         "street_number","street_number_suffix","street_name","street_suffix","unit","unit_suffix",
         "existing_units","proposed_units","existing_use","proposed_use","neighborhoods_analysis_boundaries","location"
     ))
-    return await client._get(PERMIT_TREND_DATASET_ID, {
+    return await client._get(dataset_id, {
         "$select": select,
         "$where": f"neighborhoods_analysis_boundaries is not null and {field} is not null and {field} >= '{client._iso_day(start)}' and {field} <= '{client._iso_day(end_day, end=True)}'",
         "$order": f"{field} desc",
@@ -88,16 +88,22 @@ async def _311_open_backlog(client) -> list[dict[str, Any]]:
 async def fetch_workflow_data(client, config, today: date, payload: dict[str, Any]) -> dict[str, Any]:
     if config.key == "permits":
         fields = ("filed_date", "approved_date", "issued_date", "completed_date")
-        latest_results = await asyncio.gather(*[_latest_field(client, PERMIT_TREND_DATASET_ID, config.neighborhood_field, field, today) for field in fields], return_exceptions=True)
+        dataset_id = PERMIT_TREND_DATASET_ID
+        latest_results = await asyncio.gather(*[_latest_field(client, dataset_id, config.neighborhood_field, field, today) for field in fields], return_exceptions=True)
+        using_primary_view = not isinstance(latest_results[0], BaseException)
+        if not using_primary_view:
+            dataset_id = config.dataset_id
+            latest_results = await asyncio.gather(*[_latest_field(client, dataset_id, config.neighborhood_field, field, today) for field in fields], return_exceptions=True)
         latest: dict[str, date] = {}
+        fallback_latest = datetime.fromisoformat(str(payload.get("latest"))).date()
         for field, result in zip(fields, latest_results):
-            latest[field] = result if isinstance(result, date) else datetime.fromisoformat(str(payload.get("latest"))).date()
+            latest[field] = result if isinstance(result, date) else fallback_latest
         jobs = []
         for field in fields:
-            jobs.append(_daily_by_field(client, PERMIT_TREND_DATASET_ID, config.neighborhood_field, field, latest[field]))
+            jobs.append(_daily_by_field(client, dataset_id, config.neighborhood_field, field, latest[field]))
         jobs.extend([
-            _permit_recent_by_field(client, "approved_date", latest["approved_date"]),
-            _permit_recent_by_field(client, "issued_date", latest["issued_date"]),
+            _permit_recent_by_field(client, dataset_id, "approved_date", latest["approved_date"]),
+            _permit_recent_by_field(client, dataset_id, "issued_date", latest["issued_date"]),
         ])
         results = await asyncio.gather(*jobs, return_exceptions=True)
         daily = {}
@@ -113,13 +119,20 @@ async def fetch_workflow_data(client, config, today: date, payload: dict[str, An
             contacts = {}
         for row in lifecycle_rows:
             row["_permit_contacts"] = contacts.get(str(row.get("permit_number") or "").strip(), [])
+        methodology = (
+            "Filed, approved, issued and completed counts are separate event-date cohorts from DBI's primary-address permit view; they are not same-week conversion stages."
+            if using_primary_view
+            else "Lifecycle counts fell back to the main DBI permit table because the primary-address trend view was unavailable; multi-address permits can repeat in that fallback."
+        )
         return {
             "kind": "permit_lifecycle",
             "latest": {field: latest[field].isoformat() for field in fields},
             "daily": daily,
             "approved_recent": approved_recent,
             "issued_recent": issued_recent,
-            "methodology": "Filed, approved, issued and completed counts are separate event-date cohorts from DBI's primary-address permit view; they are not same-week conversion stages.",
+            "using_primary_address_view": using_primary_view,
+            "dataset_id": dataset_id,
+            "methodology": methodology,
         }
 
     if config.key == "service_requests":
