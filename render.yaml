@@ -25,16 +25,6 @@ services:
         value: "14"
       - key: CACHE_PATH
         value: /var/data/bulletin-cache.json
-      - key: BULLETIN_BRIEF_AUDIO_PATH
-        value: /var/data/bulletin-brief.mp3
-      - key: BULLETIN_TTS_MODEL
-        value: gpt-audio-1.5
-      - key: BULLETIN_TTS_VOICE
-        value: marin
-      - key: BULLETIN_TTS_FORMAT
-        value: mp3
-      - key: BULLETIN_TTS_TIMEOUT_SECONDS
-        value: "60"
       - key: BULLETIN_LONGREAD_MODEL
         value: gpt-5.6-terra
       - key: BULLETIN_LONGREAD_TIMEOUT_SECONDS
