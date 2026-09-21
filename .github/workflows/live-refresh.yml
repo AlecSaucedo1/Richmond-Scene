@@ -1,0 +1,78 @@
+name: Live Bulletin refresh watchdog
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: bulletin-live-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for live service
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://sf-neighborhood-bulletin.onrender.com"
+          for attempt in $(seq 1 20); do
+            if curl -fsS --connect-timeout 10 --max-time 30 "$BASE/api/health" -o /tmp/health.json; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "Live service not ready yet (attempt $attempt/20)"
+            sleep 30
+          done
+          echo "Live service never became reachable"
+          exit 1
+
+      - name: Refresh if stale or old
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://sf-neighborhood-bulletin.onrender.com"
+          python - <<'PY'
+          import json
+          health=json.load(open('/tmp/health.json'))
+          age=health.get('data_age_hours')
+          stale=bool(health.get('data_stale'))
+          needs=stale or age is None or float(age) > 8
+          print(f"data_stale={stale} data_age_hours={age} needs_refresh={needs}")
+          open('/tmp/needs_refresh','w').write('1' if needs else '0')
+          PY
+          if [ "$(cat /tmp/needs_refresh)" = "1" ]; then
+            echo "Triggering live refresh"
+            curl -sS --connect-timeout 10 --max-time 900 "$BASE/api/refresh" -o /tmp/refresh.json -w "%{http_code}" > /tmp/refresh_status
+            cat /tmp/refresh.json
+            echo
+            echo "HTTP $(cat /tmp/refresh_status)"
+          else
+            echo "Live data is fresh; no forced refresh needed."
+          fi
+
+      - name: Verify freshness
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://sf-neighborhood-bulletin.onrender.com"
+          # Give the app a short window to persist the new snapshot.
+          sleep 5
+          curl -fsS --connect-timeout 10 --max-time 30 "$BASE/api/health" -o /tmp/final_health.json
+          cat /tmp/final_health.json
+          python - <<'PY'
+          import json, sys
+          health=json.load(open('/tmp/final_health.json'))
+          age=health.get('data_age_hours')
+          stale=bool(health.get('data_stale'))
+          if stale or age is None or float(age) > 24:
+              print(f"Bulletin is still stale: data_stale={stale}, data_age_hours={age}", file=sys.stderr)
+              print("source_errors=", health.get("source_errors"), file=sys.stderr)
+              print("last_error=", health.get("last_error"), file=sys.stderr)
+              sys.exit(1)
+          print(f"Live Bulletin verified fresh: data_age_hours={age}")
+          PY
