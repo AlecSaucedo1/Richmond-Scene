@@ -12,9 +12,9 @@ jobs:
         shell: bash
         run: |
           set -u
-          URL="https://data.sfgov.org/api/v3/views/vw6y-z8j6/query.json"
+          URL="https://data.sf.gov/api/v3/views/vw6y-z8j6/query.json"
           BODY='{"query":"SELECT max(requested_datetime) as latest","page":{"pageNumber":1,"pageSize":1},"includeSynthetic":false}'
-          STATUS=$(curl -sS -o /tmp/body -w "%{http_code}" -X POST "$URL" -H "Content-Type: application/json" -H "Accept: application/json" --data "$BODY")
+          STATUS=$(curl -sSL -o /tmp/body -w "%{http_code}" -X POST "$URL" -H "Content-Type: application/json" -H "Accept: application/json" --data "$BODY")
           echo "HTTP $STATUS"
           cat /tmp/body
           echo
