@@ -10,7 +10,7 @@ services:
     autoDeployTrigger: commit
     envVars:
       - key: DATASF_BASE_URL
-        value: https://data.sfgov.org
+        value: https://data.sf.gov
       - key: DATASF_TIMEOUT_SECONDS
         value: "60"
       - key: DATASF_MAX_RETRIES
