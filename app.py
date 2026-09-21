@@ -93,6 +93,27 @@ def _display_timestamp(value: str | datetime | None) -> str:
     return f"{local.strftime('%b')} {local.day}, {local.year} · {clock} PT"
 
 
+def _mark_snapshot_stale(reason: str, message: str, source_errors: dict[str, str] | None = None) -> None:
+    """Mark the retained snapshot as stale whenever a refresh cannot publish fresh data."""
+    global _snapshot, _last_error
+    _last_error = message
+    if not _snapshot:
+        return
+    failed_at = datetime.now(timezone.utc).isoformat()
+    freshness = _snapshot.setdefault("freshness", {})
+    freshness["stale"] = True
+    freshness["refresh_failure_at"] = failed_at
+    freshness["refresh_failure_display"] = _display_timestamp(failed_at)
+    _snapshot["last_refresh_error"] = message
+    _snapshot["refresh_reason"] = reason
+    if source_errors is not None:
+        _snapshot["source_errors"] = source_errors
+    try:
+        store.save(_snapshot)
+    except Exception as exc:
+        print(f"Unable to persist stale-state diagnostics: {exc}", flush=True)
+
+
 def _next_refresh_time(now: datetime | None = None) -> datetime:
     now = now or _local_now()
     today = now.date()
@@ -128,29 +149,19 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
 
         _source_errors = source_errors
         if not successful:
-            _last_error = "All DataSF sources failed during refresh"
+            message = "All DataSF sources failed during refresh"
+            _mark_snapshot_stale(reason, message, source_errors)
             if _snapshot:
-                failed_at = datetime.now(timezone.utc).isoformat()
-                freshness = _snapshot.setdefault("freshness", {})
-                freshness["stale"] = True
-                freshness["refresh_failure_at"] = failed_at
-                freshness["refresh_failure_display"] = _display_timestamp(failed_at)
-                _snapshot["source_errors"] = source_errors
-                _snapshot["last_refresh_error"] = _last_error
-                _snapshot["refresh_reason"] = reason
-                try:
-                    store.save(_snapshot)
-                except Exception as exc:
-                    print(f"Unable to persist stale-state diagnostics: {exc}", flush=True)
                 return _snapshot
-            raise RuntimeError(_last_error)
+            raise RuntimeError(message)
 
         data_refreshed_at = datetime.now(timezone.utc)
         try:
             fresh = build_snapshot(successful, data_refreshed_at)
         except Exception as exc:
-            _last_error = f"{type(exc).__name__}: {exc}"
-            print(f"Bulletin data snapshot build failed: {_last_error}", flush=True)
+            message = f"{type(exc).__name__}: {exc}"
+            print(f"Bulletin data snapshot build failed: {message}", flush=True)
+            _mark_snapshot_stale(reason, "Data snapshot build failed: " + message, source_errors)
             if _snapshot:
                 return _snapshot
             raise
@@ -265,8 +276,9 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
             )
             return fresh
         except Exception as exc:
-            _last_error = f"{type(exc).__name__}: {exc}"
-            print(f"Bulletin editorial snapshot build failed: {_last_error}", flush=True)
+            message = f"{type(exc).__name__}: {exc}"
+            print(f"Bulletin editorial snapshot build failed: {message}", flush=True)
+            _mark_snapshot_stale(reason, "Editorial snapshot build failed: " + message, source_errors)
             if _snapshot:
                 return _snapshot
             raise
@@ -369,18 +381,26 @@ async def health() -> JSONResponse:
 @app.get("/api/refresh")
 async def manual_refresh() -> JSONResponse:
     fresh = await refresh_snapshot("manual")
-    return JSONResponse({
-        "ok": True,
+    freshness = fresh.get("freshness") or {}
+    data_refreshed = _parse_datetime(freshness.get("data_refreshed_at") or fresh.get("data_refreshed_at"))
+    data_age_hours = round((datetime.now(timezone.utc) - data_refreshed.astimezone(timezone.utc)).total_seconds() / 3600, 1) if data_refreshed else None
+    data_stale = bool(freshness.get("stale")) or data_age_hours is None or data_age_hours > 24
+    payload = {
+        "ok": not data_stale,
         "generated_at": fresh.get("generated_at"),
-        "degraded": bool(_source_errors),
+        "data_stale": data_stale,
+        "data_age_hours": data_age_hours,
+        "degraded": bool(_source_errors) or data_stale,
         "source_errors": _source_errors,
+        "last_error": _last_error,
         "news_error": _news_error,
         "restaurant_error": _restaurant_error,
         "real_estate_error": _real_estate_error,
         "arts_error": _arts_error,
         "brief_error": _brief_error,
-        "freshness": fresh.get("freshness") or {},
-    })
+        "freshness": freshness,
+    }
+    return JSONResponse(payload, status_code=503 if data_stale else 200)
 
 
 @app.get("/api/bulletin")
