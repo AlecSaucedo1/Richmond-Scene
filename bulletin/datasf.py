@@ -18,7 +18,7 @@ NEIGHBORHOOD_BOUNDARY_DATASET_ID = "j2bu-swwd"
 
 class DataSFClient:
     def __init__(self) -> None:
-        configured_base = os.getenv("DATASF_BASE_URL", "https://data.sfgov.org").rstrip("/")
+        configured_base = os.getenv("DATASF_BASE_URL", "https://data.sf.gov").rstrip("/")
         self.base_url = configured_base.removesuffix("/resource")
         self.app_token = os.getenv("DATASF_APP_TOKEN", "").strip()
         self.timeout = float(os.getenv("DATASF_TIMEOUT_SECONDS", "60"))
@@ -47,20 +47,16 @@ class DataSFClient:
 
     async def _get(self, dataset_id: str, params: dict[str, str]) -> list[dict[str, Any]]:
         """Query DataSF through the current SODA 3.0 API."""
-        if not self.app_token:
-            raise RuntimeError(
-                "DATASF_APP_TOKEN is required by DataSF SODA 3.0. "
-                "Create or rotate the token in DataSF and set it on Render."
-            )
-
         query, requested_limit, offset = self._soql(params)
         url = f"{self.base_url}/api/v3/views/{dataset_id}/query.json"
-        headers = {
+        base_headers = {
             "User-Agent": "sf-neighborhood-bulletin/2.0",
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "X-App-Token": self.app_token,
         }
+        headers = dict(base_headers)
+        if self.app_token:
+            headers["X-App-Token"] = self.app_token
 
         rows: list[dict[str, Any]] = []
         remaining = requested_limit
@@ -96,11 +92,24 @@ class DataSFClient:
                             await asyncio.sleep(min(delay, 10.0))
                             continue
 
+                    if response.status_code in (401, 403) and self.app_token and "X-App-Token" in headers:
+                        # A stale token should not take down public-data refreshes.
+                        # Retry the same SODA3 request anonymously once.
+                        headers = dict(base_headers)
+                        self.app_token = ""
+                        print(
+                            f"DataSF SODA3 token rejected for {dataset_id} "
+                            f"({response.status_code}); retrying anonymously",
+                            flush=True,
+                        )
+                        if attempt < self.max_retries - 1:
+                            continue
+
                     if response.status_code in (401, 403):
                         detail = response.text[:500]
                         raise RuntimeError(
-                            f"DataSF SODA3 rejected DATASF_APP_TOKEN for {dataset_id} "
-                            f"({response.status_code}). Rotate the Render token. Response: {detail}"
+                            f"DataSF SODA3 access denied for {dataset_id} "
+                            f"({response.status_code}). Response: {detail}"
                         )
 
                     response.raise_for_status()
