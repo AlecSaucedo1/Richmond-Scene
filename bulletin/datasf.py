@@ -24,16 +24,30 @@ class DataSFClient:
         self.max_retries = max(1, int(os.getenv("DATASF_MAX_RETRIES", "3")))
 
     async def _get(self, dataset_id: str, params: dict[str, str]) -> list[dict[str, Any]]:
-        headers = {"User-Agent": "sf-neighborhood-bulletin/1.2"}
+        base_headers = {"User-Agent": "sf-neighborhood-bulletin/1.2"}
+        headers = dict(base_headers)
         if self.app_token:
             headers["X-App-Token"] = self.app_token
         url = f"{self.base_url}/{dataset_id}.json"
 
         last_error: Exception | None = None
+        token_fallback_used = False
         for attempt in range(self.max_retries):
             try:
                 async with httpx.AsyncClient(timeout=self.timeout, headers=headers, follow_redirects=True) as client:
                     response = await client.get(url, params=params)
+
+                # DataSF datasets are public. A stale/revoked Socrata app token should
+                # never freeze the Bulletin: retry once anonymously before treating
+                # an authentication response as a source failure.
+                if response.status_code in (401, 403) and self.app_token and not token_fallback_used:
+                    token_fallback_used = True
+                    headers = dict(base_headers)
+                    print(
+                        f"DataSF token rejected for {dataset_id} ({response.status_code}); retrying anonymously",
+                        flush=True,
+                    )
+                    continue
 
                 if response.status_code == 429 or 500 <= response.status_code < 600:
                     if attempt < self.max_retries - 1:
