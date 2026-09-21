@@ -18,63 +18,123 @@ NEIGHBORHOOD_BOUNDARY_DATASET_ID = "j2bu-swwd"
 
 class DataSFClient:
     def __init__(self) -> None:
-        self.base_url = os.getenv("DATASF_BASE_URL", "https://data.sfgov.org/resource").rstrip("/")
+        configured_base = os.getenv("DATASF_BASE_URL", "https://data.sfgov.org").rstrip("/")
+        self.base_url = configured_base.removesuffix("/resource")
         self.app_token = os.getenv("DATASF_APP_TOKEN", "").strip()
-        self.timeout = float(os.getenv("DATASF_TIMEOUT_SECONDS", "30"))
+        self.timeout = float(os.getenv("DATASF_TIMEOUT_SECONDS", "60"))
         self.max_retries = max(1, int(os.getenv("DATASF_MAX_RETRIES", "3")))
+        self.page_size = max(100, min(5000, int(os.getenv("DATASF_PAGE_SIZE", "5000"))))
+
+    @staticmethod
+    def _soql(params: dict[str, str]) -> tuple[str, int, int]:
+        select = str(params.get("$select") or "*").strip()
+        parts = [f"SELECT {select}"]
+        if params.get("$where"):
+            parts.append(f"WHERE {params['$where']}")
+        if params.get("$group"):
+            parts.append(f"GROUP BY {params['$group']}")
+        if params.get("$order"):
+            parts.append(f"ORDER BY {params['$order']}")
+        try:
+            limit = max(1, int(params.get("$limit") or 1000))
+        except (TypeError, ValueError):
+            limit = 1000
+        try:
+            offset = max(0, int(params.get("$offset") or 0))
+        except (TypeError, ValueError):
+            offset = 0
+        return " ".join(parts), limit, offset
 
     async def _get(self, dataset_id: str, params: dict[str, str]) -> list[dict[str, Any]]:
-        base_headers = {"User-Agent": "sf-neighborhood-bulletin/1.2"}
-        headers = dict(base_headers)
-        if self.app_token:
-            headers["X-App-Token"] = self.app_token
-        url = f"{self.base_url}/{dataset_id}.json"
+        """Query DataSF through the current SODA 3.0 API."""
+        if not self.app_token:
+            raise RuntimeError(
+                "DATASF_APP_TOKEN is required by DataSF SODA 3.0. "
+                "Create or rotate the token in DataSF and set it on Render."
+            )
 
+        query, requested_limit, offset = self._soql(params)
+        url = f"{self.base_url}/api/v3/views/{dataset_id}/query.json"
+        headers = {
+            "User-Agent": "sf-neighborhood-bulletin/2.0",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "X-App-Token": self.app_token,
+        }
+
+        rows: list[dict[str, Any]] = []
+        remaining = requested_limit
+        page_number = (offset // self.page_size) + 1
+        intra_page_skip = offset % self.page_size
         last_error: Exception | None = None
-        token_fallback_used = False
-        for attempt in range(self.max_retries):
-            try:
-                async with httpx.AsyncClient(timeout=self.timeout, headers=headers, follow_redirects=True) as client:
-                    response = await client.get(url, params=params)
 
-                # DataSF datasets are public. A stale/revoked Socrata app token should
-                # never freeze the Bulletin: retry once anonymously before treating
-                # an authentication response as a source failure.
-                if response.status_code in (401, 403) and self.app_token and not token_fallback_used:
-                    token_fallback_used = True
-                    headers = dict(base_headers)
-                    print(
-                        f"DataSF token rejected for {dataset_id} ({response.status_code}); retrying anonymously",
-                        flush=True,
-                    )
-                    continue
+        while remaining > 0:
+            page_size = min(self.page_size, remaining + intra_page_skip)
+            body = {
+                "query": query,
+                "page": {"pageNumber": page_number, "pageSize": page_size},
+                "includeSynthetic": False,
+            }
 
-                if response.status_code == 429 or 500 <= response.status_code < 600:
+            page_payload: list[dict[str, Any]] | None = None
+            for attempt in range(self.max_retries):
+                try:
+                    async with httpx.AsyncClient(
+                        timeout=self.timeout,
+                        headers=headers,
+                        follow_redirects=True,
+                    ) as client:
+                        response = await client.post(url, json=body)
+
+                    if response.status_code == 429 or 500 <= response.status_code < 600:
+                        if attempt < self.max_retries - 1:
+                            retry_after = response.headers.get("Retry-After")
+                            try:
+                                delay = float(retry_after) if retry_after else float(2 ** attempt)
+                            except ValueError:
+                                delay = float(2 ** attempt)
+                            await asyncio.sleep(min(delay, 10.0))
+                            continue
+
+                    if response.status_code in (401, 403):
+                        detail = response.text[:500]
+                        raise RuntimeError(
+                            f"DataSF SODA3 rejected DATASF_APP_TOKEN for {dataset_id} "
+                            f"({response.status_code}). Rotate the Render token. Response: {detail}"
+                        )
+
+                    response.raise_for_status()
+                    payload = response.json()
+                    if not isinstance(payload, list):
+                        raise RuntimeError(f"Unexpected DataSF SODA3 response for {dataset_id}")
+                    page_payload = payload
+                    break
+                except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                    last_error = exc
                     if attempt < self.max_retries - 1:
-                        retry_after = response.headers.get("Retry-After")
-                        try:
-                            delay = float(retry_after) if retry_after else float(2 ** attempt)
-                        except ValueError:
-                            delay = float(2 ** attempt)
-                        await asyncio.sleep(min(delay, 8.0))
+                        await asyncio.sleep(min(float(2 ** attempt), 10.0))
                         continue
+                    raise
+                except Exception as exc:
+                    last_error = exc
+                    raise
 
-                response.raise_for_status()
-                payload = response.json()
-                if not isinstance(payload, list):
-                    raise RuntimeError(f"Unexpected DataSF response for {dataset_id}")
-                return payload
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
-                last_error = exc
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(min(float(2 ** attempt), 8.0))
-                    continue
-                raise
-            except Exception as exc:
-                last_error = exc
-                raise
+            if page_payload is None:
+                raise RuntimeError(f"DataSF SODA3 request failed for {dataset_id}: {last_error}")
 
-        raise RuntimeError(f"DataSF request failed for {dataset_id}: {last_error}")
+            if intra_page_skip:
+                page_payload = page_payload[intra_page_skip:]
+                intra_page_skip = 0
+
+            take = page_payload[:remaining]
+            rows.extend(take)
+            remaining -= len(take)
+
+            if len(page_payload) < page_size or not take:
+                break
+            page_number += 1
+
+        return rows
 
     @staticmethod
     def _iso_day(day: date, end: bool = False) -> str:
