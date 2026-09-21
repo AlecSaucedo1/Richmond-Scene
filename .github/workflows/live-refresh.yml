@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: bulletin-live-refresh
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   refresh:
@@ -60,9 +60,18 @@ jobs:
         run: |
           set -euo pipefail
           BASE="https://sf-neighborhood-bulletin.onrender.com"
-          # Give the app a short window to persist the new snapshot.
-          sleep 5
-          curl -fsS --connect-timeout 10 --max-time 30 "$BASE/api/health" -o /tmp/final_health.json
+          # Render can briefly return 502 while a commit-triggered deploy swaps instances.
+          for attempt in $(seq 1 12); do
+            if curl -fsS --connect-timeout 10 --max-time 30 "$BASE/api/health" -o /tmp/final_health.json; then
+              break
+            fi
+            echo "Final health check unavailable (attempt $attempt/12); retrying"
+            sleep 15
+          done
+          if [ ! -s /tmp/final_health.json ]; then
+            echo "Could not retrieve final health after retries"
+            exit 1
+          fi
           cat /tmp/final_health.json
           python - <<'PY'
           import json, sys
