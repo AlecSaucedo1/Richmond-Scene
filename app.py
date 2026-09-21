@@ -130,6 +130,18 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
         if not successful:
             _last_error = "All DataSF sources failed during refresh"
             if _snapshot:
+                failed_at = datetime.now(timezone.utc).isoformat()
+                freshness = _snapshot.setdefault("freshness", {})
+                freshness["stale"] = True
+                freshness["refresh_failure_at"] = failed_at
+                freshness["refresh_failure_display"] = _display_timestamp(failed_at)
+                _snapshot["source_errors"] = source_errors
+                _snapshot["last_refresh_error"] = _last_error
+                _snapshot["refresh_reason"] = reason
+                try:
+                    store.save(_snapshot)
+                except Exception as exc:
+                    print(f"Unable to persist stale-state diagnostics: {exc}", flush=True)
                 return _snapshot
             raise RuntimeError(_last_error)
 
@@ -230,6 +242,9 @@ async def refresh_snapshot(reason: str = "manual") -> dict:
                 "arts_refreshed_display": _display_timestamp((fresh.get("arts") or {}).get("updated_at")),
                 "brief_refreshed_at": brief.get("generated_at"),
                 "brief_refreshed_display": _display_timestamp(brief.get("generated_at")),
+                "stale": False,
+                "refresh_failure_at": None,
+                "refresh_failure_display": None,
             }
             fresh["source_errors"] = source_errors
             fresh["available_sources"] = [item["key"] for item in successful]
@@ -267,13 +282,21 @@ async def refresh_loop() -> None:
         print(f"Startup refresh retained the last good edition: {exc}", flush=True)
 
     while True:
-        next_run = _next_refresh_time()
+        now = _local_now()
+        scheduled_run = _next_refresh_time(now)
+        stale = bool(((_snapshot or {}).get("freshness") or {}).get("stale"))
+        if stale:
+            retry_run = now + timedelta(hours=1)
+            next_run = min(scheduled_run, retry_run)
+            label = "stale-retry" if next_run == retry_run else ("morning" if next_run.hour == MORNING_REFRESH_HOUR else "evening")
+        else:
+            next_run = scheduled_run
+            label = "morning" if next_run.hour == MORNING_REFRESH_HOUR else "evening"
         _next_scheduled_refresh = next_run.isoformat()
         delay = max(1.0, (next_run - _local_now()).total_seconds())
-        print(f"Next scheduled Bulletin refresh: {_next_scheduled_refresh}", flush=True)
+        print(f"Next Bulletin refresh: {_next_scheduled_refresh} ({label})", flush=True)
         try:
             await asyncio.sleep(delay)
-            label = "morning" if next_run.hour == MORNING_REFRESH_HOUR else "evening"
             await refresh_snapshot(f"scheduled-{label}")
         except asyncio.CancelledError:
             raise
@@ -304,12 +327,18 @@ async def health() -> JSONResponse:
     real_estate = (_snapshot or {}).get("real_estate") or {}
     arts = (_snapshot or {}).get("arts") or {}
     brief = (_snapshot or {}).get("bulletin_brief") or {}
+    freshness = (_snapshot or {}).get("freshness") or {}
+    data_refreshed = _parse_datetime(freshness.get("data_refreshed_at") or (_snapshot or {}).get("data_refreshed_at"))
+    data_age_hours = round((datetime.now(timezone.utc) - data_refreshed.astimezone(timezone.utc)).total_seconds() / 3600, 1) if data_refreshed else None
+    data_stale = bool(freshness.get("stale")) or (data_age_hours is not None and data_age_hours > 24)
     return JSONResponse({
         "ok": True,
         "version": APP_VERSION,
         "has_snapshot": bool(_snapshot),
         "generated_at": (_snapshot or {}).get("generated_at"),
-        "degraded": bool(_source_errors),
+        "degraded": bool(_source_errors) or data_stale,
+        "data_stale": data_stale,
+        "data_age_hours": data_age_hours,
         "source_errors": _source_errors,
         "news_error": _news_error,
         "restaurant_error": _restaurant_error,
